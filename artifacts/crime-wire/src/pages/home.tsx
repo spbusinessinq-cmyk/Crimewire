@@ -442,24 +442,26 @@ export default function Home() {
         <section className="mt-16 border-t-2 border-black pt-12">
           <div className="text-center mb-12">
             <h2 className="text-3xl sm:text-4xl font-serif font-bold uppercase tracking-widest mb-3">What's in the Paper</h2>
-            <p className="text-sm uppercase tracking-widest font-bold text-gray-500">Ten pages. Every Thursday. One cohesive newspaper.</p>
+            <p className="text-sm uppercase tracking-widest font-bold text-gray-500">TWELVE PAGES, EVERY THURSDAY. ONE COHESIVE NEWSPAPER.</p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-y-8 gap-x-6 border-b-2 border-black pb-12">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-y-8 gap-x-6 border-b-2 border-black pb-12">
             {[
-              { num: 1, title: "The Lead", desc: "Front-page investigation, current case" },
-              { num: 2, title: "Main Investigation", desc: "Full case file, evidence review" },
-              { num: 3, title: "Secondary Lead", desc: "Second crime or court story of the week" },
-              { num: 4, title: "The City Page", desc: "Los Angeles crime news and incident reports" },
-              { num: 5, title: "Courts & Records", desc: "Court filings, sentencing, public record" },
-              { num: 6, title: "The Paper Trail", desc: "Document analysis, FOIA, records requests" },
-              { num: 7, title: "Bureau Case Desk", desc: "Cold cases, file updates, case chronologies" },
-              { num: 8, title: "City of Aliases", desc: "Identities, known associates, alias tracking" },
-              { num: 9, title: "Reader Desk", desc: "Tips, corrections, reader correspondence" },
-              { num: 10, title: "Classifieds", desc: "Crossword, noir classified ads, community notices" }
+              { num: 1,  title: "Front Page / The Lead",      desc: "Lead investigation and principal headline." },
+              { num: 2,  title: "Main Investigation",         desc: "Continuation, reporting, and primary source chain." },
+              { num: 3,  title: "Secondary Evidence",         desc: "Competing account, additional lead, or supporting evidence chain." },
+              { num: 4,  title: "City Page",                  desc: "Los Angeles crime briefs and incident reporting." },
+              { num: 5,  title: "Courts & Records",           desc: "Filings, hearings, sentencing, and public records." },
+              { num: 6,  title: "Paper Trail",                desc: "Documents, FOIA work, timelines, and source analysis." },
+              { num: 7,  title: "Bureau Case Desk",           desc: "Active, developing, and pending Crime Division investigations." },
+              { num: 8,  title: "From the Morgue",            desc: "Archival highlights, throwbacks, and then-versus-now reporting." },
+              { num: 9,  title: "Reader Desk & Press Club",   desc: "Letters, community spotlight, Ask the Desk, tips, and membership." },
+              { num: 10, title: "Puzzle Desk",                desc: "Crossword, Spot the Difference, trivia, and weekly clues." },
+              { num: 11, title: "Ink & Alibi",                desc: "Recurring comic, Wire Hunt, and reader artwork." },
+              { num: 12, title: "Market Page",                desc: "Vintage-style advertisements, Morning Joe comic, and Press Club QR." },
             ].map((section) => (
               <div key={section.num} className="border-l-2 border-black pl-3 flex flex-col">
-                <span className="text-[10px] font-bold uppercase tracking-widest mb-1">Section {section.num}</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest mb-1">Page {section.num}</span>
                 <h4 className="font-serif font-bold text-lg mb-1 leading-tight">{section.title}</h4>
                 <p className="text-xs font-sans text-gray-700 leading-snug">{section.desc}</p>
               </div>

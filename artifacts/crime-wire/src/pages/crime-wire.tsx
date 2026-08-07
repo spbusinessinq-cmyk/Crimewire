@@ -37,18 +37,18 @@ interface Issue {
 }
 
 const TWELVE_SECTIONS = [
-  { num: 1, title: "The Lead", desc: "Front-page investigation — the primary story of the issue, bylined and sourced." },
-  { num: 2, title: "Main Investigation", desc: "The full case file for the running investigation. Evidence, timeline, key names." },
-  { num: 3, title: "Secondary Lead", desc: "The second major crime or court story of the week. Separate from the main case." },
-  { num: 4, title: "The City Page", desc: "Los Angeles crime news: incident reports, arrests, sentencing, and local court filings." },
-  { num: 5, title: "Courts & Records", desc: "Public record documents. Filings, verdicts, sentencing, and formal case status." },
-  { num: 6, title: "The Paper Trail", desc: "Document analysis, FOIA requests, public records requests, and source chain notes." },
-  { num: 7, title: "Bureau Case Desk", desc: "Cold case updates, file re-openings, chronologies, and evidence re-evaluation." },
-  { num: 8, title: "City of Aliases", desc: "Identity tracking, known associates, assumed names, and alias cross-references." },
-  { num: 9, title: "From the Morgue", desc: "Archival material — historical crime reporting, primary source documents, throwback cases." },
-  { num: 10, title: "Reader Desk", desc: "Reader tips, corrections, correspondence, and letters to the desk." },
-  { num: 11, title: "Game Desk", desc: "Crossword, Spot the Difference, Wire Hunt, and weekly puzzles." },
-  { num: 12, title: "Market Page", desc: "Period-style classified advertisements and community notices." },
+  { num: 1,  title: "Front Page / The Lead",    desc: "Lead investigation and principal headline — the primary story of the issue, bylined and sourced." },
+  { num: 2,  title: "Main Investigation",        desc: "Continuation, reporting, and primary source chain for the running investigation." },
+  { num: 3,  title: "Secondary Evidence",        desc: "Competing account, additional lead, or supporting evidence chain. Separate from the main case." },
+  { num: 4,  title: "City Page",                 desc: "Los Angeles crime briefs and incident reporting: arrests, sentencing, and local court filings." },
+  { num: 5,  title: "Courts & Records",          desc: "Filings, hearings, sentencing, and public records. Formal case status and verdicts." },
+  { num: 6,  title: "Paper Trail",               desc: "Documents, FOIA work, timelines, and source analysis. Records requests and chain of custody." },
+  { num: 7,  title: "Bureau Case Desk",          desc: "Active, developing, and pending Crime Division investigations. Cold case updates and file re-openings." },
+  { num: 8,  title: "From the Morgue",           desc: "Archival highlights, throwbacks, and then-versus-now reporting from the historical record." },
+  { num: 9,  title: "Reader Desk & Press Club",  desc: "Letters, community spotlight, Ask the Desk, tips, and Press Club membership." },
+  { num: 10, title: "Puzzle Desk",               desc: "Crossword, Spot the Difference, trivia, and weekly clues." },
+  { num: 11, title: "Ink & Alibi",               desc: "Recurring comic, Wire Hunt, and reader artwork." },
+  { num: 12, title: "Market Page",               desc: "Vintage-style advertisements, Morning Joe comic, and Press Club QR." },
 ];
 
 export default function CrimeWire() {
@@ -473,13 +473,13 @@ export default function CrimeWire() {
         <section className="mt-20 border-t-2 border-black pt-16">
           <div className="text-center mb-16">
             <h2 className="text-4xl font-headline font-bold uppercase tracking-widest mb-3">What's in the Paper</h2>
-            <p className="text-xs uppercase tracking-widest font-bold text-gray-500">Twelve pages. Every Thursday. One cohesive newspaper.</p>
+            <p className="text-xs uppercase tracking-widest font-bold text-gray-500">TWELVE PAGES, EVERY THURSDAY. ONE COHESIVE NEWSPAPER.</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-y-10 gap-x-6 border-b-2 border-black pb-16">
             {TWELVE_SECTIONS.map((section) => (
               <div key={section.num} className="border-l-2 border-black pl-4 flex flex-col">
-                <span className="text-[10px] font-bold uppercase tracking-widest mb-2 text-gray-500">Section {section.num}</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest mb-2 text-gray-500">Page {section.num}</span>
                 <h4 className="font-serif font-bold text-lg mb-2 leading-tight">{section.title}</h4>
                 <p className="text-xs font-sans text-gray-700 leading-relaxed">{section.desc}</p>
               </div>

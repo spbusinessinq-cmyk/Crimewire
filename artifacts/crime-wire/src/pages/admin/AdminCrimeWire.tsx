@@ -124,6 +124,11 @@ export default function AdminCrimeWire() {
             </Field>
             <Field label="Page Count">
               <input type="number" className={inputCls} value={editing.pageCount ?? 12} min={1} onChange={(e) => set("pageCount", parseInt(e.target.value))} />
+              {(editing.pageCount ?? 12) !== 12 && (
+                <p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-amber-700">
+                  ⚠ Crime Wire is a twelve-page newspaper. Only set a different value if this is a special or shortened edition — not a regular weekly issue.
+                </p>
+              )}
             </Field>
           </div>
           <Field label="Title / Edition Name" required>
