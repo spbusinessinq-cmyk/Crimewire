@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api, Badge, Spinner, EmptyState, ErrorMsg, SuccessMsg, Btn, Field, selectCls, textareaCls, fmtDateTime } from "./shared";
 
-interface Props { token: string }
+interface Props {}
 
 interface Letter {
   id: number; type: string; nameOrAlias: string | null;
@@ -43,7 +43,7 @@ const TYPE_LABELS: Record<string, string> = {
   art: "Art", tip: "Tip", puzzle_answer: "Puzzle", wire_hunt: "Wire Hunt",
 };
 
-export default function AdminReaderInbox({ token }: Props) {
+export default function AdminReaderInbox() {
   const [activeTab, setActiveTab] = useState<TabId>("letters");
   const [letters, setLetters] = useState<Letter[]>([]);
   const [tips, setTips] = useState<Tip[]>([]);
@@ -58,13 +58,13 @@ export default function AdminReaderInbox({ token }: Props) {
 
   const loadLetters = (type?: string) => {
     const q = type ? `?type=${type}` : "";
-    api(`/letters${q}`, token).then(async (r) => {
+    api(`/letters${q}`).then(async (r) => {
       if (r.ok) setLetters(await r.json());
     }).finally(() => setLoading(false));
   };
 
   const loadTips = () => {
-    api("/tips", token).then(async (r) => {
+    api("/tips").then(async (r) => {
       if (r.ok) setTips(await r.json());
     }).finally(() => setLoading(false));
   };
@@ -73,11 +73,11 @@ export default function AdminReaderInbox({ token }: Props) {
     setLoading(true);
     if (activeTab === "letters") loadLetters(filterType || undefined);
     else loadTips();
-  }, [activeTab, filterType, token]);
+  }, [activeTab, filterType]);
 
   async function updateLetter(id: number, updates: Partial<Letter>) {
     setSaving(true); setError(""); setSuccess("");
-    const res = await api(`/letters/${id}`, token, {
+    const res = await api(`/letters/${id}`, {
       method: "PATCH", body: JSON.stringify(updates),
     });
     if (res.ok) {

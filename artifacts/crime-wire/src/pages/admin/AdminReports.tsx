@@ -5,7 +5,7 @@ import {
   Btn, Field, inputCls, selectCls, textareaCls, fmtDate, fmtDateTime, BASE,
 } from "./shared";
 
-interface Props { token: string }
+interface Props {}
 
 interface Report {
   id: number; type: string; status: string; headline: string; deck: string | null;
@@ -68,7 +68,7 @@ const EMPTY_REPORT: Partial<Report> = {
   isDeveloping: false, correctionNotice: "",
 };
 
-export default function AdminReports({ token }: Props) {
+export default function AdminReports() {
   const [reports, setReports] = useState<Report[]>([]);
   const [caseFiles, setCaseFiles] = useState<CaseFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,13 +85,13 @@ export default function AdminReports({ token }: Props) {
   const load = useCallback(() => {
     setLoading(true);
     Promise.all([
-      api("/reports/all/list", token).then((r) => r.ok ? r.json() : []),
-      api("/case-files/all", token).then((r) => r.ok ? r.json() : []),
+      api("/reports/all/list").then((r) => r.ok ? r.json() : []),
+      api("/case-files/all").then((r) => r.ok ? r.json() : []),
     ]).then(([reps, cases]) => {
       setReports(reps);
       setCaseFiles(cases);
     }).finally(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   useEffect(load, [load]);
 
@@ -133,9 +133,7 @@ export default function AdminReports({ token }: Props) {
     };
 
     const res = await api(
-      isNew ? "/reports" : `/reports/${editing.id}`,
-      token,
-      { method: isNew ? "POST" : "PATCH", body: JSON.stringify(payload) }
+      isNew ? "/reports" : `/reports/${editing.id}`, { method: isNew ? "POST" : "PATCH", body: JSON.stringify(payload) }
     );
 
     if (res.ok) {
@@ -172,7 +170,7 @@ export default function AdminReports({ token }: Props) {
   async function archive(id: number) {
     if (!confirm("Archive this report? It will no longer appear publicly.")) return;
     setSaving(true);
-    await api(`/reports/${id}`, token, { method: "DELETE" });
+    await api(`/reports/${id}`, { method: "DELETE" });
     setEditing(null);
     load();
     setSaving(false);

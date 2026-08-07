@@ -2,7 +2,6 @@ import { useState, useRef } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useCreateSubscription, useCreateTip } from "@workspace/api-client-react";
 import { QRCodeSVG } from "qrcode.react";
 
 const EDITION_URL = import.meta.env.VITE_EDITION_URL || "";
@@ -61,46 +60,53 @@ export default function Home() {
     }
   });
 
-  const createSubscription = useCreateSubscription();
-  const createTip = useCreateTip();
+  const [subLoading, setSubLoading] = useState(false);
+  const [tipLoading, setTipLoading] = useState(false);
 
-  const onSubSubmit = (data: SubscriptionForm) => {
+  const onSubSubmit = async (data: SubscriptionForm) => {
     setSubDuplicate(false);
-    createSubscription.mutate({
-      data: {
-        email: data.email,
-        name: data.name || null,
-        zip: data.zip || null,
-        editionType: data.editionType,
-        consent: data.consent
-      }
-    }, {
-      onSuccess: () => {
+    setSubLoading(true);
+    try {
+      const res = await fetch('/api/subscriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: data.email,
+          name: data.name || null,
+          zip: data.zip || null,
+          editionType: data.editionType,
+          consent: data.consent,
+        }),
+      });
+      if (res.ok) {
         setSubSuccess(true);
         subForm.reset();
-      },
-      onError: (err: any) => {
-        if (err?.response?.status === 409) {
-          setSubDuplicate(true);
-        }
+      } else if (res.status === 409) {
+        setSubDuplicate(true);
       }
-    });
+    } catch { /* network error — form stays open */ }
+    finally { setSubLoading(false); }
   };
 
-  const onTipSubmit = (data: TipForm) => {
-    createTip.mutate({
-      data: {
-        nameOrAlias: data.nameOrAlias || null,
-        contactEmail: data.contactEmail || null,
-        message: data.message,
-        provenance: data.provenance || null
-      }
-    }, {
-      onSuccess: () => {
+  const onTipSubmit = async (data: TipForm) => {
+    setTipLoading(true);
+    try {
+      const res = await fetch('/api/tips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: data.nameOrAlias || null,
+          contactEmail: data.contactEmail || null,
+          message: data.message,
+          source: data.provenance || null,
+        }),
+      });
+      if (res.ok) {
         setTipSuccess(true);
         tipForm.reset();
       }
-    });
+    } catch { /* silent */ }
+    finally { setTipLoading(false); }
   };
 
   const scrollToSection = (id: string) => {
@@ -380,10 +386,10 @@ export default function Home() {
 
                   <button 
                     type="submit" 
-                    disabled={createSubscription.isPending}
+                    disabled={subLoading}
                     className="w-full bg-black text-white py-3 mt-4 text-sm font-bold uppercase tracking-widest hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {createSubscription.isPending ? "Transmitting..." : "Subscribe"}
+                    {subLoading ? "Transmitting..." : "Subscribe"}
                   </button>
                 </form>
               )}
@@ -575,10 +581,10 @@ export default function Home() {
 
               <button 
                 type="submit" 
-                disabled={createTip.isPending}
+                disabled={tipLoading}
                 className="w-full border-2 border-black bg-black text-white py-4 text-sm font-bold uppercase tracking-widest hover:bg-white hover:text-black transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {createTip.isPending ? "Transmitting..." : "Submit to Desk"}
+                {tipLoading ? "Transmitting..." : "Submit to Desk"}
               </button>
             </form>
           )}

@@ -3,7 +3,6 @@ import { Link } from "wouter";
 import { api, fmtDateTime, Spinner } from "./shared";
 
 interface Props {
-  token: string;
   onNavigate: (tab: string) => void;
 }
 
@@ -16,7 +15,7 @@ interface Stats {
   log: Array<{ id: number; action: string; entityType: string; entityTitle: string; createdAt: string }>;
 }
 
-export default function AdminDashboard({ token, onNavigate }: Props) {
+export default function AdminDashboard({ onNavigate }: Props) {
   const [stats, setStats] = useState<Partial<Stats>>({});
   const [loading, setLoading] = useState(true);
 
@@ -25,12 +24,12 @@ export default function AdminDashboard({ token, onNavigate }: Props) {
       setLoading(true);
       try {
         const [reportsRes, issuesRes, subsRes, lettersRes, caseFilesRes, logRes] = await Promise.all([
-          api("/reports/all/list", token),
-          api("/issues/all", token),
-          api("/subscriptions", token),
-          api("/letters", token),
-          api("/case-files/all", token),
-          api("/admin-log?limit=10", token),
+          api("/reports/all/list"),
+          api("/issues/all"),
+          api("/subscriptions"),
+          api("/letters"),
+          api("/case-files/all"),
+          api("/admin-log?limit=10"),
         ]);
 
         const reports = reportsRes.ok ? await reportsRes.json() : [];
@@ -66,7 +65,7 @@ export default function AdminDashboard({ token, onNavigate }: Props) {
       }
     }
     load();
-  }, [token]);
+  }, []);
 
   if (loading) return <Spinner />;
 

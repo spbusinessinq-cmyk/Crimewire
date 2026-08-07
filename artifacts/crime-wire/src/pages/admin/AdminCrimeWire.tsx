@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { api, apiForm, Badge, Spinner, EmptyState, ErrorMsg, SuccessMsg, Btn, Field, inputCls, selectCls, textareaCls, fmtDate } from "./shared";
 
-interface Props { token: string }
+interface Props {}
 
 interface Issue {
   id: number; volume: number; number: string; title: string;
@@ -21,7 +21,7 @@ const EMPTY_ISSUE = {
   publishDate: "", pageCount: 12,
 };
 
-export default function AdminCrimeWire({ token }: Props) {
+export default function AdminCrimeWire() {
   const [issues, setIssues] = useState<Issue[]>([]);
   const [queue, setQueue] = useState<QueuedReport[]>([]);
   const [loading, setLoading] = useState(true);
@@ -34,8 +34,8 @@ export default function AdminCrimeWire({ token }: Props) {
   const loadAll = () => {
     setLoading(true);
     Promise.all([
-      api("/issues/all", token).then((r) => r.ok ? r.json() : []),
-      api("/reports/all/list", token).then((r) => r.ok ? r.json() : []),
+      api("/issues/all").then((r) => r.ok ? r.json() : []),
+      api("/reports/all/list").then((r) => r.ok ? r.json() : []),
     ]).then(([iss, reps]) => {
       setIssues(iss);
       setQueue(reps.filter((r: QueuedReport) => {
@@ -44,7 +44,7 @@ export default function AdminCrimeWire({ token }: Props) {
     }).finally(() => setLoading(false));
   };
 
-  useEffect(loadAll, [token]);
+  useEffect(loadAll, []);
 
   async function saveIssue(e: React.FormEvent) {
     e.preventDefault();
@@ -63,8 +63,7 @@ export default function AdminCrimeWire({ token }: Props) {
 
     const isNew = !editing.id;
     const res = await apiForm(
-      isNew ? "/issues" : `/issues/${editing.id}`,
-      token, fd, isNew ? "POST" : "PATCH"
+      isNew ? "/issues" : `/issues/${editing.id}`, fd, isNew ? "POST" : "PATCH"
     );
 
     if (res.ok) {
@@ -81,7 +80,7 @@ export default function AdminCrimeWire({ token }: Props) {
 
   async function publishIssue(id: number) {
     setSaving(true);
-    const res = await api(`/issues/${id}`, token, {
+    const res = await api(`/issues/${id}`, {
       method: "PATCH",
       body: JSON.stringify({ status: "published", publishDate: new Date().toISOString() }),
     });
@@ -92,7 +91,7 @@ export default function AdminCrimeWire({ token }: Props) {
 
   async function archiveIssue(id: number) {
     setSaving(true);
-    await api(`/issues/${id}`, token, { method: "PATCH", body: JSON.stringify({ status: "archived" }) });
+    await api(`/issues/${id}`, { method: "PATCH", body: JSON.stringify({ status: "archived" }) });
     setSuccess("Issue archived."); loadAll(); setSaving(false);
   }
 

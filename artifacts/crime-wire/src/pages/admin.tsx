@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "wouter";
 
 import AdminDashboard from "./admin/AdminDashboard";
@@ -11,6 +11,8 @@ import AdminMailingList from "./admin/AdminMailingList";
 import AdminAdvertisers from "./admin/AdminAdvertisers";
 import AdminCorrections from "./admin/AdminCorrections";
 import AdminSettings from "./admin/AdminSettings";
+
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
 type TabId =
   | "dashboard"
@@ -25,69 +27,129 @@ type TabId =
   | "settings";
 
 const TABS: { id: TabId; label: string; short: string }[] = [
-  { id: "dashboard",    label: "Dashboard",       short: "Dash" },
-  { id: "reports",      label: "City Reports",    short: "Reports" },
-  { id: "case-files",   label: "Case Files",      short: "Cases" },
+  { id: "dashboard",    label: "Dashboard",         short: "Dash" },
+  { id: "reports",      label: "City Reports",      short: "Reports" },
+  { id: "case-files",   label: "Case Files",        short: "Cases" },
   { id: "uploads",      label: "Records & Uploads", short: "Uploads" },
-  { id: "crime-wire",   label: "Crime Wire",      short: "CW" },
-  { id: "reader-inbox", label: "Reader Inbox",    short: "Inbox" },
-  { id: "mailing-list", label: "Mailing List",    short: "Mail" },
-  { id: "advertisers",  label: "Advertisers",     short: "Ads" },
-  { id: "corrections",  label: "Corrections",     short: "Fixes" },
-  { id: "settings",     label: "Settings",        short: "Settings" },
+  { id: "crime-wire",   label: "Crime Wire",        short: "CW" },
+  { id: "reader-inbox", label: "Reader Inbox",      short: "Inbox" },
+  { id: "mailing-list", label: "Mailing List",      short: "Mail" },
+  { id: "advertisers",  label: "Advertisers",       short: "Ads" },
+  { id: "corrections",  label: "Corrections",       short: "Fixes" },
+  { id: "settings",     label: "Settings",          short: "Settings" },
 ];
 
 export default function Admin() {
-  const [password, setPassword]         = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab]       = useState<TabId>("dashboard");
-  const [authError, setAuthError]       = useState(false);
-  const [mobileNav, setMobileNav]       = useState(false);
+  // null = checking session, false = not logged in, true = logged in
+  const [isAuthenticated, setIsAuthenticated] = useState<null | boolean>(null);
+  const [codeInput, setCodeInput]             = useState("");
+  const [authError, setAuthError]             = useState<string | null>(null);
+  const [loginPending, setLoginPending]       = useState(false);
+  const [activeTab, setActiveTab]             = useState<TabId>("dashboard");
+  const [mobileNav, setMobileNav]             = useState(false);
 
-  // --- LOGIN SCREEN ---
+  // ── Check for existing session on mount ──────────────────────
+  useEffect(() => {
+    fetch(`${BASE}/api/auth/me`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((d) => setIsAuthenticated(d.authenticated === true))
+      .catch(() => setIsAuthenticated(false));
+  }, []);
+
+  // ── Login ─────────────────────────────────────────────────────
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    if (!codeInput) return;
+    setLoginPending(true);
+    setAuthError(null);
+    try {
+      const res = await fetch(`${BASE}/api/auth/login`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: codeInput }),
+      });
+      if (res.ok) {
+        setIsAuthenticated(true);
+        setCodeInput("");
+      } else if (res.status === 429) {
+        setAuthError("Too many login attempts. Please wait 15 minutes.");
+      } else if (res.status === 503) {
+        setAuthError("Admin auth is not configured on this deployment. Contact the site operator.");
+      } else {
+        setAuthError("Access denied.");
+      }
+    } catch {
+      setAuthError("Network error. Please try again.");
+    } finally {
+      setLoginPending(false);
+    }
+  }
+
+  // ── Logout ────────────────────────────────────────────────────
+  async function handleLogout() {
+    await fetch(`${BASE}/api/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    }).catch(() => {});
+    setIsAuthenticated(false);
+    setCodeInput("");
+    setAuthError(null);
+  }
+
+  // ── Loading state ─────────────────────────────────────────────
+  if (isAuthenticated === null) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-black border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // ── Login screen ──────────────────────────────────────────────
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-white text-black flex flex-col items-center justify-center p-4 font-sans">
         <div className="w-full max-w-sm border border-black p-8">
           <div className="text-center mb-6">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500 mb-1">RSR Crime Division</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500 mb-1">
+              RSR Crime Division
+            </p>
             <h1 className="text-3xl font-serif font-bold">BUREAU LOGIN</h1>
           </div>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (password) {
-                setIsAuthenticated(true);
-                setAuthError(false);
-              }
-            }}
-            className="space-y-4"
-          >
+          <form onSubmit={handleLogin} className="space-y-4">
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-widest mb-1">
                 Access Code
               </label>
               <input
                 type="password"
-                value={password}
-                onChange={(e) => { setPassword(e.target.value); setAuthError(false); }}
+                value={codeInput}
+                onChange={(e) => { setCodeInput(e.target.value); setAuthError(null); }}
                 className="w-full border border-black px-3 py-2 text-black bg-white focus:outline-none focus:ring-1 focus:ring-black"
                 required
                 autoFocus
+                autoComplete="current-password"
               />
             </div>
             {authError && (
-              <p className="text-xs text-red-600 uppercase tracking-widest font-bold">Access denied.</p>
+              <p className="text-xs text-red-600 uppercase tracking-widest font-bold">
+                {authError}
+              </p>
             )}
             <button
               type="submit"
-              className="w-full bg-black text-white py-2 text-xs font-bold uppercase tracking-widest hover:bg-gray-800 transition-colors"
+              disabled={loginPending}
+              className="w-full bg-black text-white py-2 text-xs font-bold uppercase tracking-widest hover:bg-gray-800 transition-colors disabled:opacity-50"
             >
-              Enter Admin Desk
+              {loginPending ? "Verifying…" : "Enter Admin Desk"}
             </button>
           </form>
           <div className="mt-6 pt-4 border-t border-gray-200 text-center">
-            <Link href="/" className="text-[10px] uppercase tracking-widest text-gray-400 hover:text-black">
+            <Link
+              href="/"
+              className="text-[10px] uppercase tracking-widest text-gray-400 hover:text-black"
+            >
               ← Return to Public Site
             </Link>
           </div>
@@ -96,7 +158,7 @@ export default function Admin() {
     );
   }
 
-  // --- ADMIN SHELL ---
+  // ── Admin shell ───────────────────────────────────────────────
   const navigate = (tab: string) => {
     setActiveTab(tab as TabId);
     setMobileNav(false);
@@ -135,7 +197,7 @@ export default function Admin() {
               Public Site ↗
             </a>
             <button
-              onClick={() => { setIsAuthenticated(false); setPassword(""); }}
+              onClick={handleLogout}
               className="text-[10px] uppercase tracking-widest text-gray-400 hover:text-white"
             >
               Log Out
@@ -160,7 +222,7 @@ export default function Admin() {
           ))}
         </nav>
 
-        {/* Tablet tab nav (shorter labels) */}
+        {/* Tablet tab nav */}
         <nav className="hidden md:flex lg:hidden overflow-x-auto border-t border-gray-800">
           {TABS.map((tab) => (
             <button
@@ -204,7 +266,6 @@ export default function Admin() {
 
       {/* Main content */}
       <main className="max-w-6xl mx-auto px-4 py-6">
-        {/* Breadcrumb / section title */}
         <div className="mb-6">
           <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-gray-400 mb-0.5">
             Admin Desk
@@ -215,18 +276,17 @@ export default function Admin() {
           <div className="h-px bg-gray-200 mt-3" />
         </div>
 
-        {/* Tab content */}
         <div>
-          {activeTab === "dashboard"    && <AdminDashboard token={password} onNavigate={navigate} />}
-          {activeTab === "reports"      && <AdminReports token={password} />}
-          {activeTab === "case-files"   && <AdminCaseFiles token={password} />}
-          {activeTab === "uploads"      && <AdminUploads token={password} />}
-          {activeTab === "crime-wire"   && <AdminCrimeWire token={password} />}
-          {activeTab === "reader-inbox" && <AdminReaderInbox token={password} />}
-          {activeTab === "mailing-list" && <AdminMailingList token={password} />}
-          {activeTab === "advertisers"  && <AdminAdvertisers token={password} />}
-          {activeTab === "corrections"  && <AdminCorrections token={password} />}
-          {activeTab === "settings"     && <AdminSettings token={password} />}
+          {activeTab === "dashboard"    && <AdminDashboard onNavigate={navigate} />}
+          {activeTab === "reports"      && <AdminReports />}
+          {activeTab === "case-files"   && <AdminCaseFiles />}
+          {activeTab === "uploads"      && <AdminUploads />}
+          {activeTab === "crime-wire"   && <AdminCrimeWire />}
+          {activeTab === "reader-inbox" && <AdminReaderInbox />}
+          {activeTab === "mailing-list" && <AdminMailingList />}
+          {activeTab === "advertisers"  && <AdminAdvertisers />}
+          {activeTab === "corrections"  && <AdminCorrections />}
+          {activeTab === "settings"     && <AdminSettings />}
         </div>
       </main>
     </div>

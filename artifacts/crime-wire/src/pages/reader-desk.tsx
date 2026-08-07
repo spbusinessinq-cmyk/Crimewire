@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useCreateTip } from "@workspace/api-client-react";
 
 const tipSchema = z.object({
   nameOrAlias: z.string().optional(),
@@ -30,22 +29,27 @@ export default function ReaderDesk() {
     }
   });
 
-  const createTip = useCreateTip();
+  const [tipLoading, setTipLoading] = useState(false);
 
-  const onTipSubmit = (data: TipForm) => {
-    createTip.mutate({
-      data: {
-        nameOrAlias: data.nameOrAlias || null,
-        contactEmail: data.contactEmail || null,
-        message: data.message,
-        provenance: data.provenance || null
-      }
-    }, {
-      onSuccess: () => {
+  const onTipSubmit = async (data: TipForm) => {
+    setTipLoading(true);
+    try {
+      const res = await fetch('/api/tips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: data.nameOrAlias || null,
+          contactEmail: data.contactEmail || null,
+          message: data.message,
+          source: data.provenance || null,
+        }),
+      });
+      if (res.ok) {
         setTipSuccess(true);
         tipForm.reset();
       }
-    });
+    } catch { /* silent */ }
+    finally { setTipLoading(false); }
   };
 
   return (
@@ -129,10 +133,10 @@ export default function ReaderDesk() {
 
             <button 
               type="submit" 
-              disabled={createTip.isPending}
+              disabled={tipLoading}
               className="w-full bg-black text-white py-4 mt-2 text-sm font-bold uppercase tracking-widest hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {createTip.isPending ? "Transmitting..." : "Submit to Bureau Desk"}
+              {tipLoading ? "Transmitting..." : "Submit to Bureau Desk"}
             </button>
           </form>
         )}

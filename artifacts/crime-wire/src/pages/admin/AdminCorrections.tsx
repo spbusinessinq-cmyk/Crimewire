@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api, Badge, Spinner, EmptyState, ErrorMsg, SuccessMsg, Btn, Field, inputCls, textareaCls, fmtDate, fmtDateTime } from "./shared";
 
-interface Props { token: string }
+interface Props {}
 
 interface Correction {
   id: number;
@@ -18,7 +18,7 @@ const EMPTY: Partial<Correction> = {
   issueLabel: "", section: "", originalText: "", correctedText: "", adminNote: "",
 };
 
-export default function AdminCorrections({ token }: Props) {
+export default function AdminCorrections() {
   const [items, setItems] = useState<Correction[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Partial<Correction> | null>(null);
@@ -28,21 +28,19 @@ export default function AdminCorrections({ token }: Props) {
 
   const load = () => {
     setLoading(true);
-    api("/corrections/all", token).then(async (r) => {
+    api("/corrections/all").then(async (r) => {
       if (r.ok) setItems(await r.json());
     }).finally(() => setLoading(false));
   };
 
-  useEffect(load, [token]);
+  useEffect(load, []);
 
   async function save() {
     if (!editing) return;
     setSaving(true); setError(""); setSuccess("");
     const isNew = !editing.id;
     const res = await api(
-      isNew ? "/corrections" : `/corrections/${editing.id}`,
-      token,
-      { method: isNew ? "POST" : "PATCH", body: JSON.stringify(editing) }
+      isNew ? "/corrections" : `/corrections/${editing.id}`, { method: isNew ? "POST" : "PATCH", body: JSON.stringify(editing) }
     );
     if (res.ok) {
       setSuccess(isNew ? "Correction created." : "Correction updated.");
@@ -57,7 +55,7 @@ export default function AdminCorrections({ token }: Props) {
 
   async function togglePublish(c: Correction) {
     setSaving(true);
-    const res = await api(`/corrections/${c.id}`, token, {
+    const res = await api(`/corrections/${c.id}`, {
       method: "PATCH",
       body: JSON.stringify({ publishedAt: c.publishedAt ? null : new Date().toISOString() }),
     });

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api, Badge, Spinner, EmptyState, ErrorMsg, SuccessMsg, Btn, Field, inputCls, selectCls, textareaCls, fmtDate } from "./shared";
 
-interface Props { token: string }
+interface Props {}
 
 interface CaseFile {
   id: number; identifier: string; title: string; status: string;
@@ -21,7 +21,7 @@ const STATUS_LABELS: Record<string, string> = {
   active_investigation: "Active Investigation",
 };
 
-export default function AdminCaseFiles({ token }: Props) {
+export default function AdminCaseFiles() {
   const [items, setItems] = useState<CaseFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Partial<CaseFile> | null>(null);
@@ -32,15 +32,15 @@ export default function AdminCaseFiles({ token }: Props) {
 
   const load = () => {
     setLoading(true);
-    api("/case-files/all", token).then(async (r) => {
+    api("/case-files/all").then(async (r) => {
       if (r.ok) setItems(await r.json());
     }).finally(() => setLoading(false));
   };
 
-  useEffect(load, [token]);
+  useEffect(load, []);
 
   async function loadDetail(id: number) {
-    const r = await api(`/case-files/${id}`, token);
+    const r = await api(`/case-files/${id}`);
     if (r.ok) setDetail(await r.json());
   }
 
@@ -49,9 +49,7 @@ export default function AdminCaseFiles({ token }: Props) {
     setSaving(true); setError(""); setSuccess("");
     const isNew = !editing.id;
     const res = await api(
-      isNew ? "/case-files" : `/case-files/${editing.id}`,
-      token,
-      { method: isNew ? "POST" : "PATCH", body: JSON.stringify(editing) }
+      isNew ? "/case-files" : `/case-files/${editing.id}`, { method: isNew ? "POST" : "PATCH", body: JSON.stringify(editing) }
     );
     if (res.ok) {
       setSuccess(isNew ? "Case file created." : "Case file updated.");

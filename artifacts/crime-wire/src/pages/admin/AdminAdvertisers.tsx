@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api, Badge, Spinner, EmptyState, ErrorMsg, SuccessMsg, Btn, Field, inputCls, selectCls, textareaCls, fmtDate } from "./shared";
 
-interface Props { token: string }
+interface Props {}
 
 interface Advertiser {
   id: number; businessName: string; contactName: string | null;
@@ -19,7 +19,7 @@ const EMPTY: Partial<Advertiser> = {
   approvalStatus: "pending", assetsDescription: "", active: false, internalNotes: "",
 };
 
-export default function AdminAdvertisers({ token }: Props) {
+export default function AdminAdvertisers() {
   const [items, setItems] = useState<Advertiser[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Partial<Advertiser> | null>(null);
@@ -29,21 +29,19 @@ export default function AdminAdvertisers({ token }: Props) {
 
   const load = () => {
     setLoading(true);
-    api("/advertisers", token).then(async (r) => {
+    api("/advertisers").then(async (r) => {
       if (r.ok) setItems(await r.json());
     }).finally(() => setLoading(false));
   };
 
-  useEffect(load, [token]);
+  useEffect(load, []);
 
   async function save() {
     if (!editing) return;
     setSaving(true); setError(""); setSuccess("");
     const isNew = !editing.id;
     const res = await api(
-      isNew ? "/advertisers" : `/advertisers/${editing.id}`,
-      token,
-      { method: isNew ? "POST" : "PATCH", body: JSON.stringify(editing) }
+      isNew ? "/advertisers" : `/advertisers/${editing.id}`, { method: isNew ? "POST" : "PATCH", body: JSON.stringify(editing) }
     );
     if (res.ok) {
       setSuccess(isNew ? "Advertiser created." : "Advertiser updated.");

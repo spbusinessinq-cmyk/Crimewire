@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api, Badge, Spinner, EmptyState, ErrorMsg, SuccessMsg, Btn, Field, inputCls, selectCls, fmtDate, downloadCsv } from "./shared";
 
-interface Props { token: string }
+interface Props {}
 
 interface Subscriber {
   id: number; email: string; name: string | null; zip: string | null;
@@ -22,7 +22,7 @@ const EDITION_LABELS: Record<string, string> = {
   both: "Both",
 };
 
-export default function AdminMailingList({ token }: Props) {
+export default function AdminMailingList() {
   const [activeTab, setActiveTab] = useState<TabId>("digital");
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
   const [pressClub, setPressClub] = useState<PressClubMember[]>([]);
@@ -39,8 +39,8 @@ export default function AdminMailingList({ token }: Props) {
   const loadAll = () => {
     setLoading(true);
     Promise.all([
-      api("/subscriptions", token).then((r) => r.ok ? r.json() : []),
-      api("/press-club", token).then((r) => r.ok ? r.json() : []),
+      api("/subscriptions").then((r) => r.ok ? r.json() : []),
+      api("/press-club").then((r) => r.ok ? r.json() : []),
     ]).then(([subs, pc]) => {
       // Remove obvious test records
       const cleanSubs = (subs as Subscriber[]).filter(
@@ -54,11 +54,11 @@ export default function AdminMailingList({ token }: Props) {
     }).finally(() => setLoading(false));
   };
 
-  useEffect(loadAll, [token]);
+  useEffect(loadAll, []);
 
   async function updatePressClub(id: number, updates: Partial<PressClubMember>) {
     setSaving(true); setError(""); setSuccess("");
-    const res = await api(`/press-club/${id}`, token, {
+    const res = await api(`/press-club/${id}`, {
       method: "PATCH", body: JSON.stringify(updates),
     });
     if (res.ok) {

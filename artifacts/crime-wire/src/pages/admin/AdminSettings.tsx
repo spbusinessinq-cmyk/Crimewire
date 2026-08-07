@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { api, Spinner, ErrorMsg, SuccessMsg, Field, inputCls, Btn } from "./shared";
 
-interface Props { token: string }
+interface Props {}
 
 const SETTING_DEFS: { key: string; label: string; hint: string; multiline?: boolean }[] = [
   { key: "newsroom_status", label: "Newsroom Status", hint: 'Public status line shown in the footer. E.g. "RSR Crime Division — Active Bureau."' },
@@ -15,7 +15,7 @@ const SETTING_DEFS: { key: string; label: string; hint: string; multiline?: bool
   { key: "homepage_notice", label: "Homepage Notice", hint: "Optional notice shown on the Crime Division homepage." },
 ];
 
-export default function AdminSettings({ token }: Props) {
+export default function AdminSettings() {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
@@ -23,16 +23,16 @@ export default function AdminSettings({ token }: Props) {
   const [success, setSuccess] = useState("");
 
   useEffect(() => {
-    api("/settings", token).then(async (res) => {
+    api("/settings").then(async (res) => {
       if (res.ok) setSettings(await res.json());
     }).finally(() => setLoading(false));
-  }, [token]);
+  }, []);
 
   async function saveSetting(key: string, value: string) {
     setSaving(key);
     setError("");
     setSuccess("");
-    const res = await api("/settings", token, {
+    const res = await api("/settings", {
       method: "PUT",
       body: JSON.stringify({ key, value }),
     });

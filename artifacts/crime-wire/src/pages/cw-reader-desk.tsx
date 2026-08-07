@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useCreateTip } from "@workspace/api-client-react";
 import { Link } from "wouter";
 
 const CheckIcon = () => (
@@ -102,7 +101,6 @@ export default function CwReaderDesk() {
     },
   });
 
-  const createTip = useCreateTip();
 
   // Reset form when switching tabs
   const handleTabChange = (tab: TabType) => {
@@ -122,29 +120,29 @@ export default function CwReaderDesk() {
     setServerError("");
     setSubmitting(true);
 
-    // Tips still use the Orval-generated hook for backward compatibility
     if (activeTab === "tip") {
-      createTip.mutate(
-        {
-          data: {
-            nameOrAlias: data.nameOrAlias || null,
+      try {
+        const tipRes = await fetch('/api/tips', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: data.nameOrAlias || null,
             contactEmail: data.contactEmail || null,
             message: data.body,
-            provenance: data.extra || null,
-          },
-        },
-        {
-          onSuccess: () => {
-            setSuccess(true);
-            form.reset();
-            setSubmitting(false);
-          },
-          onError: () => {
-            setServerError("Unable to submit. Please try again.");
-            setSubmitting(false);
-          },
+            source: data.extra || null,
+          }),
+        });
+        if (tipRes.ok) {
+          setSuccess(true);
+          form.reset();
+        } else {
+          setServerError("Unable to submit. Please try again.");
         }
-      );
+        setSubmitting(false);
+      } catch {
+        setServerError("Unable to submit. Please try again.");
+        setSubmitting(false);
+      }
       return;
     }
 
@@ -324,10 +322,10 @@ export default function CwReaderDesk() {
 
             <button
               type="submit"
-              disabled={submitting || createTip.isPending}
+              disabled={submitting || false}
               className="w-full bg-black text-white py-4 text-sm font-bold uppercase tracking-widest hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {(submitting || createTip.isPending) ? "Transmitting…" : "Submit to Bureau Desk"}
+              {(submitting || false) ? "Transmitting…" : "Submit to Bureau Desk"}
             </button>
           </form>
         )}

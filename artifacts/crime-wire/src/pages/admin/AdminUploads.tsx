@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { api, apiForm, Badge, Spinner, EmptyState, ErrorMsg, SuccessMsg, Btn, Field, inputCls, selectCls, textareaCls, fmtDate, fmtDateTime } from "./shared";
 
-interface Props { token: string }
+interface Props {}
 
 interface Upload {
   id: number; filename: string; originalName: string; filePath: string;
@@ -15,7 +15,7 @@ interface Upload {
 
 const ACCEPTED = "image/jpeg,image/png,image/webp,image/gif,application/pdf,audio/mpeg,audio/mp4,audio/wav,video/mp4,video/webm";
 
-export default function AdminUploads({ token }: Props) {
+export default function AdminUploads() {
   const [items, setItems] = useState<Upload[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -33,12 +33,12 @@ export default function AdminUploads({ token }: Props) {
 
   const load = () => {
     setLoading(true);
-    api("/uploads", token).then(async (r) => {
+    api("/uploads").then(async (r) => {
       if (r.ok) setItems(await r.json());
     }).finally(() => setLoading(false));
   };
 
-  useEffect(load, [token]);
+  useEffect(load, []);
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
@@ -56,7 +56,7 @@ export default function AdminUploads({ token }: Props) {
     fd.append("visibility", form.visibility);
     if (form.internalNotes) fd.append("internalNotes", form.internalNotes);
 
-    const res = await apiForm("/uploads", token, fd, "POST");
+    const res = await apiForm("/uploads", fd, "POST");
     if (res.ok) {
       setSuccess("File uploaded. Visibility is INTERNAL ONLY until you explicitly approve it for publication.");
       setForm({ title: "", caption: "", source: "", credit: "", visibility: "internal_only", internalNotes: "" });
@@ -71,7 +71,7 @@ export default function AdminUploads({ token }: Props) {
 
   async function patchUpload(id: number, updates: Partial<Upload>) {
     setSaving(true);
-    const res = await api(`/uploads/${id}`, token, { method: "PATCH", body: JSON.stringify(updates) });
+    const res = await api(`/uploads/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
     if (res.ok) {
       setSuccess("Record updated.");
       setEditing(null);
@@ -86,7 +86,7 @@ export default function AdminUploads({ token }: Props) {
   async function deleteUpload(id: number) {
     if (!confirm("Remove this upload record? The file on disk is not deleted.")) return;
     setSaving(true);
-    await api(`/uploads/${id}`, token, { method: "DELETE" });
+    await api(`/uploads/${id}`, { method: "DELETE" });
     load();
     setSaving(false);
   }

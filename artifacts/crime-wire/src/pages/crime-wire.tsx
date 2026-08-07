@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useCreateSubscription } from "@workspace/api-client-react";
 import { Link } from "wouter";
 
 const CheckIcon = () => (
@@ -87,29 +86,31 @@ export default function CrimeWire() {
     }
   });
 
-  const createSubscription = useCreateSubscription();
+  const [subLoading, setSubLoading] = useState(false);
 
-  const onSubSubmit = (data: SubscriptionForm) => {
+  const onSubSubmit = async (data: SubscriptionForm) => {
     setSubDuplicate(false);
-    createSubscription.mutate({
-      data: {
-        email: data.email,
-        name: data.name || null,
-        zip: data.zip || null,
-        editionType: data.editionType,
-        consent: data.consent
-      }
-    }, {
-      onSuccess: () => {
+    setSubLoading(true);
+    try {
+      const res = await fetch('/api/subscriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: data.email,
+          name: data.name || null,
+          zip: data.zip || null,
+          editionType: data.editionType,
+          consent: data.consent,
+        }),
+      });
+      if (res.ok) {
         setSubSuccess(true);
         subForm.reset();
-      },
-      onError: (err: any) => {
-        if (err?.response?.status === 409) {
-          setSubDuplicate(true);
-        }
+      } else if (res.status === 409) {
+        setSubDuplicate(true);
       }
-    });
+    } catch { /* network error */ }
+    finally { setSubLoading(false); }
   };
 
   const scrollToSection = (id: string) => {
@@ -424,10 +425,10 @@ export default function CrimeWire() {
 
                   <button
                     type="submit"
-                    disabled={createSubscription.isPending}
+                    disabled={subLoading}
                     className="w-full bg-black text-white py-4 mt-6 text-sm font-bold uppercase tracking-widest hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {createSubscription.isPending ? "Transmitting..." : "Subscribe"}
+                    {subLoading ? "Transmitting..." : "Subscribe"}
                   </button>
                 </form>
               )}
