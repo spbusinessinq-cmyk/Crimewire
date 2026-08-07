@@ -3,13 +3,19 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Los Angeles Crime Wire API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: subscriptions
+    description: Newsletter subscription operations
+  - name: tips
+    description: Reader tip operations
+  - name: admin
+    description: Admin operations
 paths:
   /healthz:
     get:
@@ -24,6 +30,114 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /subscriptions:
+    post:
+      operationId: createSubscription
+      tags: [subscriptions]
+      summary: Subscribe to the newsletter
+      description: Subscribe to the Crime Wire Thursday Drop
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscriptionInput"
+      responses:
+        "201":
+          description: Successfully subscribed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Subscription"
+        "409":
+          description: Email already subscribed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    get:
+      operationId: listSubscriptions
+      tags: [admin]
+      summary: List all subscriptions (admin)
+      description: Returns all newsletter subscriptions. Requires admin authentication.
+      parameters:
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [json, csv]
+      responses:
+        "200":
+          description: List of subscriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Subscription"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /tips:
+    post:
+      operationId: createTip
+      tags: [tips]
+      summary: Submit a reader tip
+      description: Submit a tip or correction to the Reader Desk
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TipInput"
+      responses:
+        "201":
+          description: Tip submitted successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tip"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+    get:
+      operationId: listTips
+      tags: [admin]
+      summary: List all reader tips (admin)
+      description: Returns all submitted reader tips. Requires admin authentication.
+      responses:
+        "200":
+          description: List of tips
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Tip"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +148,84 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    SubscriptionInput:
+      type: object
+      required:
+        - email
+        - editionType
+        - consent
+      properties:
+        email:
+          type: string
+        name:
+          type: ["string", "null"]
+        zip:
+          type: ["string", "null"]
+        editionType:
+          type: string
+          enum: [digital, mailed, both]
+        consent:
+          type: boolean
+
+    Subscription:
+      type: object
+      required:
+        - id
+        - email
+        - editionType
+        - createdAt
+      properties:
+        id:
+          type: number
+        email:
+          type: string
+        name:
+          type: ["string", "null"]
+        zip:
+          type: ["string", "null"]
+        editionType:
+          type: string
+        createdAt:
+          type: string
+
+    TipInput:
+      type: object
+      required:
+        - message
+      properties:
+        nameOrAlias:
+          type: ["string", "null"]
+        contactEmail:
+          type: ["string", "null"]
+        message:
+          type: string
+        provenance:
+          type: ["string", "null"]
+
+    Tip:
+      type: object
+      required:
+        - id
+        - message
+        - createdAt
+      properties:
+        id:
+          type: number
+        nameOrAlias:
+          type: ["string", "null"]
+        contactEmail:
+          type: ["string", "null"]
+        message:
+          type: string
+        provenance:
+          type: ["string", "null"]
+        createdAt:
+          type: string

@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Los Angeles Crime Wire"
+description = "A mobile-first landing page for Los Angeles Crime Wire, an independent weekly crime and investigative newspaper from RSR Crime Division. Features a 1940s tabloid visual identity, the current Black Dahlia front-page lead (BDH-002), a subscription signup form with email/name/ZIP and digital or mailed-copy options, a reader tip form, and a private admin area for reviewing submissions. Built with persistent database-backed storage."
+version = "1.0.0"
+id = "artifacts/crime-wire"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23416
+
+[services.development]
+run = "pnpm --filter @workspace/crime-wire run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/crime-wire", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/crime-wire/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23416"
+BASE_PATH = "/"
