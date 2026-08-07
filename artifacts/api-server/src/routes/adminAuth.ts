@@ -1,18 +1,28 @@
-import type { Request, Response, NextFunction } from "express";
+/**
+ * Express middleware that gates admin-only routes.
+ * Accepts a valid cw_session cookie (JWT) or a Bearer token matching
+ * ADMIN_CODE / ADMIN_PASSWORD — whichever is configured.
+ */
 
-export function adminAuth(req: Request, res: Response, next: NextFunction) {
-  const adminPassword = process.env.ADMIN_PASSWORD;
-  if (!adminPassword) {
-    res.status(503).json({
-      error: "Admin access not configured. Set ADMIN_PASSWORD environment secret.",
-    });
+import type { Request, Response, NextFunction } from "express";
+import { isAdminRequest, getAdminCode } from "../lib/session-key";
+
+export async function adminAuth(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  const adminCode = getAdminCode();
+  if (!adminCode) {
+    res.status(503).json({ error: "Admin authentication is not configured." });
     return;
   }
-  const auth = req.headers.authorization ?? "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-  if (!token || token !== adminPassword) {
+
+  const ok = await isAdminRequest(req as any);
+  if (!ok) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
+
   next();
 }

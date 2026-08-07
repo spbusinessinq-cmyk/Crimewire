@@ -1,4 +1,5 @@
 import express, { type Express } from "express";
+import cookieParser from "cookie-parser";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
@@ -25,7 +26,10 @@ app.use(
     },
   }),
 );
-app.use(cors());
+// Trust Replit's reverse proxy so X-Forwarded-For is used for rate limiting.
+app.set("trust proxy", 1);
+app.use(cookieParser());
+app.use(cors({ credentials: true, origin: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

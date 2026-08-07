@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, caseFilesTable, reportsTable, adminLogTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { adminAuth } from "./adminAuth";
+import { isAdminRequest } from "../lib/session-key";
 import { z } from "zod";
 
 const router = Router();
@@ -39,12 +40,7 @@ router.get("/:id", async (req, res) => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid ID" }); return; }
 
-  const isAdmin = (() => {
-    const adminPw = process.env.ADMIN_PASSWORD;
-    const auth = req.headers.authorization ?? "";
-    const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-    return adminPw && token === adminPw;
-  })();
+  const isAdmin = await isAdminRequest(req as any);
 
   const [row] = await db.select().from(caseFilesTable).where(eq(caseFilesTable.id, id));
   if (!row) { res.status(404).json({ error: "Case file not found" }); return; }

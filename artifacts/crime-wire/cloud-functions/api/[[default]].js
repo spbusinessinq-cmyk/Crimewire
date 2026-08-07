@@ -162,17 +162,19 @@ app.post("/auth/login", async (req, res) => {
   }
 
   const { code } = req.body ?? {};
-  const adminCode = process.env.ADMIN_CODE;
+  // Accept ADMIN_CODE (EdgeOne canonical) or ADMIN_PASSWORD (legacy Replit secret name).
+  const adminCode = process.env.ADMIN_CODE || process.env.ADMIN_PASSWORD;
   const sessionSecret = process.env.SESSION_SECRET;
 
-  if (!adminCode || !sessionSecret) {
-    return res.status(503).json({
-      error: "Admin auth not configured. Set ADMIN_CODE and SESSION_SECRET in EdgeOne environment.",
-    });
+  if (!adminCode) {
+    return res.status(503).json({ error: "Admin authentication is not configured." });
+  }
+  if (!sessionSecret) {
+    return res.status(503).json({ error: "Admin authentication is not configured." });
   }
 
   if (!code || code !== adminCode) {
-    return res.status(401).json({ error: "Invalid access code." });
+    return res.status(401).json({ error: "Access denied." });
   }
 
   try {
@@ -206,7 +208,7 @@ app.get("/auth/me", async (req, res) => {
 // =============================================================
 
 app.get("/healthz", (_req, res) => {
-  const hasAdminCode = !!process.env.ADMIN_CODE;
+  const hasAdminCode = !!(process.env.ADMIN_CODE || process.env.ADMIN_PASSWORD);
   const hasSessionSecret = !!process.env.SESSION_SECRET;
   res.json({
     ok: hasAdminCode && hasSessionSecret,

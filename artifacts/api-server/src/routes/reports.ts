@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, reportsTable, adminLogTable } from "@workspace/db";
 import { eq, desc, inArray, and } from "drizzle-orm";
 import { adminAuth } from "./adminAuth";
+import { isAdminRequest } from "../lib/session-key";
 import { z } from "zod";
 
 const router = Router();
@@ -88,12 +89,7 @@ router.get("/:id", async (req, res) => {
   if (!row) { res.status(404).json({ error: "Report not found" }); return; }
 
   const publicStatuses = ["published", "developing", "updated", "corrected"];
-  const isAdmin = (() => {
-    const adminPw = process.env.ADMIN_PASSWORD;
-    const auth = req.headers.authorization ?? "";
-    const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-    return adminPw && token === adminPw;
-  })();
+  const isAdmin = await isAdminRequest(req as any);
 
   if (!publicStatuses.includes(row.status) && !isAdmin) {
     res.status(404).json({ error: "Report not found" }); return;
