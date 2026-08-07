@@ -5,7 +5,7 @@
 The Crime Division app (Los Angeles Crime Wire) is configured to deploy on **Tencent EdgeOne Makers** (Pages). It uses:
 
 - **Frontend:** React 19 + Vite 7, builds to `dist/`
-- **API:** Node.js Cloud Function at `cloud-functions/api/[[default]].js` — handles all `/api/*` routes
+- **API:** Node.js Cloud Function at `functions/api/[[default]].js` — handles all `/api/*` routes
 - **Storage:** `@edgeone/pages-blob` — replaces Replit PostgreSQL; all data lives in EdgeOne Blob namespaces
 - **Auth:** Signed HttpOnly cookie (`cw_session`) — no credentials in the frontend bundle
 
@@ -132,7 +132,7 @@ pnpm --filter @workspace/crime-wire run dev      # Frontend dev server
 pnpm --filter @workspace/api-server run dev      # Express API (PostgreSQL, Bearer auth)
 ```
 
-The EdgeOne cloud function (`cloud-functions/api/`) is production-only. In development, the existing Express API (`artifacts/api-server/`) serves requests.
+The EdgeOne cloud function (`functions/api/`) is production-only. In development, the existing Express API (`artifacts/api-server/`) serves requests.
 
 ---
 
