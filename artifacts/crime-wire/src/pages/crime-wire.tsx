@@ -122,23 +122,39 @@ export default function CrimeWire() {
               <h3 className="font-headline font-bold text-2xl uppercase tracking-widest border-b border-black pb-2 mb-6">
                 Latest Edition
               </h3>
-              <div className="border-4 border-black p-8 sm:p-16 text-center bg-gray-50 flex flex-col items-center">
-                <span className="font-sans font-bold uppercase tracking-widest text-sm mb-4">
-                  Edition Pending
-                </span>
-                <p className="font-serif text-lg mb-10 max-w-md">
-                  The latest edition will appear here every Thursday. Join the Thursday Drop to receive it directly.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-4 w-full justify-center">
-                  <button className="border-2 border-black bg-white py-4 px-6 text-xs font-bold uppercase tracking-widest opacity-50 cursor-not-allowed">
-                    Read The Latest Edition (Coming)
-                  </button>
-                  <button 
-                    onClick={() => scrollToSection("subscribe")}
-                    className="bg-black text-white border-2 border-black py-4 px-6 text-xs font-bold uppercase tracking-widest hover:bg-gray-800 transition-colors"
-                  >
-                    Join The Thursday Drop
-                  </button>
+              <div className="border-4 border-black bg-white">
+                <div className="border-b-2 border-black px-6 py-3 flex items-center justify-between">
+                  <span className="font-sans font-bold uppercase tracking-widest text-[10px] text-gray-500">Los Angeles Crime Wire · Thursday August 7, 2026</span>
+                  <span className="font-sans font-bold uppercase tracking-widest text-[10px] bg-black text-white px-2 py-0.5">Current</span>
+                </div>
+                <div className="p-8 sm:p-10">
+                  <div className="mb-1">
+                    <span className="font-sans text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500">Vol. 1 · No. 2</span>
+                  </div>
+                  <h4 className="font-headline font-bold text-3xl sm:text-4xl uppercase leading-tight mb-2">
+                    Weekly · August 5, 2026
+                  </h4>
+                  <p className="font-serif italic text-gray-700 text-base mb-8">
+                    The Black Dahlia investigation. Los Angeles crime, courts and records. Reader tips. Puzzles.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <a
+                      href="/editions/edition-002-august-5-2026.pdf"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid="button-read-latest-edition"
+                      className="flex-1 bg-black text-white border-2 border-black py-4 px-6 text-xs font-bold uppercase tracking-widest hover:bg-gray-800 transition-colors text-center"
+                    >
+                      Read the Latest Edition
+                    </a>
+                    <button
+                      onClick={() => scrollToSection("subscribe")}
+                      data-testid="button-join-thursday-drop"
+                      className="flex-1 border-2 border-black bg-white py-4 px-6 text-xs font-bold uppercase tracking-widest hover:bg-gray-100 transition-colors"
+                    >
+                      Join The Thursday Drop
+                    </button>
+                  </div>
                 </div>
               </div>
             </section>
@@ -148,13 +164,46 @@ export default function CrimeWire() {
               <h3 className="font-headline font-bold text-2xl uppercase tracking-widest border-b border-black pb-2 mb-6">
                 Archive
               </h3>
-              <div className="border border-dashed border-gray-400 p-12 text-center bg-gray-50">
-                <span className="font-sans font-bold uppercase tracking-widest text-xs text-gray-500 block mb-3">
-                  Archive Pending
-                </span>
-                <p className="font-serif text-sm text-gray-700">
-                  No past issues archived at this time. Issues will be added as they are published.
-                </p>
+              <div className="flex flex-col divide-y divide-black border border-black">
+                {[
+                  {
+                    vol: "Vol. 1 · No. 2",
+                    date: "August 5, 2026",
+                    label: "Weekly",
+                    desc: "The Missing Exit continued. Los Angeles crime and records. Reader Desk.",
+                    url: "/editions/edition-002-august-5-2026.pdf",
+                    id: "002",
+                  },
+                  {
+                    vol: "Vol. 1 · No. 1",
+                    date: "Special Edition",
+                    label: "The Missing Exit",
+                    desc: "BDH-002 · The Biltmore Hotel and the last confirmed location in the Black Dahlia movement record. Press-ready edition.",
+                    url: "/editions/edition-001-the-missing-exit.pdf",
+                    id: "001",
+                  },
+                ].map((ed) => (
+                  <div key={ed.id} className="flex items-start justify-between gap-6 px-5 py-4 hover:bg-gray-50 transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mb-1">
+                        <span className="font-sans text-[9px] font-bold uppercase tracking-[0.2em] text-gray-400">{ed.vol}</span>
+                        <span className="font-sans text-[9px] font-bold uppercase tracking-[0.2em] text-gray-400">·</span>
+                        <span className="font-sans text-[9px] font-bold uppercase tracking-[0.2em] text-gray-400">{ed.date}</span>
+                      </div>
+                      <p className="font-headline font-bold text-lg uppercase leading-tight">{ed.label}</p>
+                      <p className="font-serif text-xs text-gray-600 mt-1 leading-snug">{ed.desc}</p>
+                    </div>
+                    <a
+                      href={ed.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid={`link-archive-edition-${ed.id}`}
+                      className="flex-shrink-0 border border-black px-3 py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-black hover:text-white transition-colors whitespace-nowrap self-center"
+                    >
+                      Open PDF
+                    </a>
+                  </div>
+                ))}
               </div>
             </section>
 
