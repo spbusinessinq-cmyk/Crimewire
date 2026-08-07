@@ -1,0 +1,4 @@
+- [Crime Division admin CMS architecture](admin-cms-architecture.md) — 10-tab admin shell; sub-components in admin/ dir; shared.tsx has all utilities.
+- [Reports API design](reports-api-design.md) — placement is JSON text field; public endpoint filters by status array; admin uses /all/list route.
+- [DB schema conventions](db-schema-conventions.md) — zod imports from "zod/v4" in schema files, plain "zod" in route handlers; inArray from drizzle-orm top-level.
+- [Upload safety rule](upload-safety-rule.md) — approved_for_publication defaults false; never auto-publishes; public visibility must be set AND approved separately.

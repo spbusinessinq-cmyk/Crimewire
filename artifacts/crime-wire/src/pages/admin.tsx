@@ -1,92 +1,94 @@
 import { useState } from "react";
 import { Link } from "wouter";
-import { useListSubscriptions, useListTips, Subscription, Tip } from "@workspace/api-client-react";
+
+import AdminDashboard from "./admin/AdminDashboard";
+import AdminReports from "./admin/AdminReports";
+import AdminCaseFiles from "./admin/AdminCaseFiles";
+import AdminUploads from "./admin/AdminUploads";
+import AdminCrimeWire from "./admin/AdminCrimeWire";
+import AdminReaderInbox from "./admin/AdminReaderInbox";
+import AdminMailingList from "./admin/AdminMailingList";
+import AdminAdvertisers from "./admin/AdminAdvertisers";
+import AdminCorrections from "./admin/AdminCorrections";
+import AdminSettings from "./admin/AdminSettings";
+
+type TabId =
+  | "dashboard"
+  | "reports"
+  | "case-files"
+  | "uploads"
+  | "crime-wire"
+  | "reader-inbox"
+  | "mailing-list"
+  | "advertisers"
+  | "corrections"
+  | "settings";
+
+const TABS: { id: TabId; label: string; short: string }[] = [
+  { id: "dashboard",    label: "Dashboard",       short: "Dash" },
+  { id: "reports",      label: "City Reports",    short: "Reports" },
+  { id: "case-files",   label: "Case Files",      short: "Cases" },
+  { id: "uploads",      label: "Records & Uploads", short: "Uploads" },
+  { id: "crime-wire",   label: "Crime Wire",      short: "CW" },
+  { id: "reader-inbox", label: "Reader Inbox",    short: "Inbox" },
+  { id: "mailing-list", label: "Mailing List",    short: "Mail" },
+  { id: "advertisers",  label: "Advertisers",     short: "Ads" },
+  { id: "corrections",  label: "Corrections",     short: "Fixes" },
+  { id: "settings",     label: "Settings",        short: "Settings" },
+];
 
 export default function Admin() {
-  const [password, setPassword] = useState("");
+  const [password, setPassword]         = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [activeTab, setActiveTab] = useState<"subscriptions" | "tips">("subscriptions");
+  const [activeTab, setActiveTab]       = useState<TabId>("dashboard");
+  const [authError, setAuthError]       = useState(false);
+  const [mobileNav, setMobileNav]       = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (password) {
-      setIsAuthenticated(true);
-    }
-  };
-
-  const { data: subscriptions, error: subError, isLoading: subLoading } = useListSubscriptions(
-    undefined,
-    {
-      query: {
-        enabled: isAuthenticated && activeTab === "subscriptions",
-        retry: false,
-      },
-      request: {
-        headers: {
-          Authorization: `Bearer ${password}`,
-        },
-      },
-    }
-  );
-
-  const { data: tips, error: tipsError, isLoading: tipsLoading } = useListTips({
-    query: {
-      enabled: isAuthenticated && activeTab === "tips",
-      retry: false,
-    },
-    request: {
-      headers: {
-        Authorization: `Bearer ${password}`,
-      },
-    },
-  });
-
-  const handleDownloadCsv = async () => {
-    try {
-      const res = await fetch("/api/subscriptions?format=csv", {
-        headers: { Authorization: `Bearer ${password}` },
-      });
-      if (!res.ok) throw new Error("Failed to fetch CSV");
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "subscriptions.csv";
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error(err);
-      alert("Failed to download CSV");
-    }
-  };
-
+  // --- LOGIN SCREEN ---
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-white text-black p-4 flex flex-col items-center justify-center font-sans">
+      <div className="min-h-screen bg-white text-black flex flex-col items-center justify-center p-4 font-sans">
         <div className="w-full max-w-sm border border-black p-8">
-          <h1 className="text-3xl font-serif font-bold mb-6 text-center">BUREAU LOGIN</h1>
-          <form onSubmit={handleLogin} className="space-y-4">
+          <div className="text-center mb-6">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500 mb-1">RSR Crime Division</p>
+            <h1 className="text-3xl font-serif font-bold">BUREAU LOGIN</h1>
+          </div>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (password) {
+                setIsAuthenticated(true);
+                setAuthError(false);
+              }
+            }}
+            className="space-y-4"
+          >
             <div>
-              <label className="block text-xs font-bold uppercase tracking-widest mb-1">Access Code</label>
+              <label className="block text-[10px] font-bold uppercase tracking-widest mb-1">
+                Access Code
+              </label>
               <input
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => { setPassword(e.target.value); setAuthError(false); }}
                 className="w-full border border-black px-3 py-2 text-black bg-white focus:outline-none focus:ring-1 focus:ring-black"
                 required
+                autoFocus
               />
             </div>
+            {authError && (
+              <p className="text-xs text-red-600 uppercase tracking-widest font-bold">Access denied.</p>
+            )}
             <button
               type="submit"
-              className="w-full bg-black text-white px-4 py-2 font-bold uppercase tracking-wider text-sm hover:bg-gray-800 transition-colors"
+              className="w-full bg-black text-white py-2 text-xs font-bold uppercase tracking-widest hover:bg-gray-800 transition-colors"
             >
-              Access Admin
+              Enter Admin Desk
             </button>
           </form>
-          <div className="mt-6 text-center border-t border-black pt-4">
-            <Link href="/" className="text-xs uppercase tracking-widest hover:underline">
-              ← Return to Front Page
+          <div className="mt-6 pt-4 border-t border-gray-200 text-center">
+            <Link href="/" className="text-[10px] uppercase tracking-widest text-gray-400 hover:text-black">
+              ← Return to Public Site
             </Link>
           </div>
         </div>
@@ -94,165 +96,139 @@ export default function Admin() {
     );
   }
 
-  const isAuthError =
-    (subError as any)?.response?.status === 401 ||
-    (subError as any)?.response?.status === 403 ||
-    (tipsError as any)?.response?.status === 401 ||
-    (tipsError as any)?.response?.status === 403;
-
-  if (isAuthError) {
-    return (
-      <div className="min-h-screen bg-white text-black p-4 flex flex-col items-center justify-center font-sans">
-        <div className="w-full max-w-sm border border-black p-8 text-center">
-          <h1 className="text-2xl font-serif font-bold mb-4">ACCESS DENIED</h1>
-          <p className="mb-6 text-sm">Invalid authorization credentials.</p>
-          <button
-            onClick={() => setIsAuthenticated(false)}
-            className="bg-black text-white px-6 py-2 font-bold uppercase tracking-wider text-sm"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // --- ADMIN SHELL ---
+  const navigate = (tab: string) => {
+    setActiveTab(tab as TabId);
+    setMobileNav(false);
+  };
 
   return (
-    <div className="min-h-screen bg-white text-black p-4 md:p-8 font-sans">
-      <div className="max-w-6xl mx-auto">
-        <header className="border-b-4 border-black pb-4 mb-8 flex justify-between items-end">
-          <div>
-            <h1 className="text-4xl font-serif font-black uppercase">Admin Desk</h1>
-            <p className="text-sm font-bold uppercase tracking-widest mt-1">RSR Crime Division</p>
-          </div>
-          <div className="flex items-center gap-4">
-            <Link href="/" className="text-xs font-bold uppercase tracking-widest hover:underline">
-              Public Site
-            </Link>
+    <div className="min-h-screen bg-gray-50 font-sans">
+      {/* Top bar */}
+      <header className="bg-black text-white sticky top-0 z-50">
+        <div className="flex items-center justify-between px-4 h-12">
+          {/* Left: wordmark */}
+          <div className="flex items-center gap-3">
             <button
-              onClick={() => setIsAuthenticated(false)}
-              className="text-xs font-bold uppercase tracking-widest border border-black px-3 py-1 hover:bg-black hover:text-white transition-colors"
+              className="lg:hidden p-1 text-gray-400 hover:text-white"
+              onClick={() => setMobileNav(!mobileNav)}
+              aria-label="Toggle navigation"
+            >
+              <span className="text-lg leading-none">{mobileNav ? "✕" : "☰"}</span>
+            </button>
+            <span className="text-xs font-bold uppercase tracking-[0.2em]">
+              RSR Crime Division
+            </span>
+            <span className="hidden sm:inline text-gray-500 text-xs">·</span>
+            <span className="hidden sm:inline text-xs font-bold uppercase tracking-widest text-gray-400">
+              Admin Desk
+            </span>
+          </div>
+          {/* Right: controls */}
+          <div className="flex items-center gap-3">
+            <a
+              href="/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] uppercase tracking-widest text-gray-400 hover:text-white hidden sm:inline"
+            >
+              Public Site ↗
+            </a>
+            <button
+              onClick={() => { setIsAuthenticated(false); setPassword(""); }}
+              className="text-[10px] uppercase tracking-widest text-gray-400 hover:text-white"
             >
               Log Out
             </button>
           </div>
-        </header>
-
-        <div className="flex gap-4 border-b border-black mb-8">
-          <button
-            onClick={() => setActiveTab("subscriptions")}
-            className={`px-4 py-2 font-bold uppercase tracking-wider text-sm ${
-              activeTab === "subscriptions" ? "bg-black text-white" : "hover:bg-gray-100"
-            }`}
-          >
-            Subscriptions
-          </button>
-          <button
-            onClick={() => setActiveTab("tips")}
-            className={`px-4 py-2 font-bold uppercase tracking-wider text-sm ${
-              activeTab === "tips" ? "bg-black text-white" : "hover:bg-gray-100"
-            }`}
-          >
-            Reader Tips
-          </button>
         </div>
 
-        {activeTab === "subscriptions" && (
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-2xl font-serif font-bold">Mailing List</h2>
-              <button
-                onClick={handleDownloadCsv}
-                className="bg-black text-white px-4 py-2 text-xs font-bold uppercase tracking-widest"
-              >
-                Download CSV
-              </button>
-            </div>
-            
-            {subLoading ? (
-              <div className="py-8 text-center text-sm uppercase tracking-widest">Loading records...</div>
-            ) : subscriptions && subscriptions.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm border-collapse border border-black">
-                  <thead>
-                    <tr className="border-b-2 border-black bg-gray-50">
-                      <th className="text-left p-3 font-bold uppercase tracking-wider">ID</th>
-                      <th className="text-left p-3 font-bold uppercase tracking-wider">Email</th>
-                      <th className="text-left p-3 font-bold uppercase tracking-wider">Name</th>
-                      <th className="text-left p-3 font-bold uppercase tracking-wider">ZIP</th>
-                      <th className="text-left p-3 font-bold uppercase tracking-wider">Type</th>
-                      <th className="text-left p-3 font-bold uppercase tracking-wider">Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {subscriptions.map((sub: Subscription) => (
-                      <tr key={sub.id} className="border-b border-gray-300 hover:bg-gray-50">
-                        <td className="p-3">{sub.id}</td>
-                        <td className="p-3 font-mono">{sub.email}</td>
-                        <td className="p-3">{sub.name || "—"}</td>
-                        <td className="p-3">{sub.zip || "—"}</td>
-                        <td className="p-3 uppercase">{sub.editionType}</td>
-                        <td className="p-3 whitespace-nowrap">{new Date(sub.createdAt).toLocaleDateString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="py-12 text-center border border-dashed border-black">
-                <p className="text-sm uppercase tracking-widest font-bold">No subscriptions found</p>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Desktop tab nav */}
+        <nav className="hidden lg:flex overflow-x-auto border-t border-gray-800">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => navigate(tab.id)}
+              className={`px-4 py-2 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap transition-colors ${
+                activeTab === tab.id
+                  ? "bg-white text-black"
+                  : "text-gray-400 hover:text-white hover:bg-gray-800"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
 
-        {activeTab === "tips" && (
-          <div>
-            <h2 className="text-2xl font-serif font-bold mb-4">Reader Tips</h2>
-            
-            {tipsLoading ? (
-              <div className="py-8 text-center text-sm uppercase tracking-widest">Loading records...</div>
-            ) : tips && tips.length > 0 ? (
-              <div className="space-y-4">
-                {tips.map((tip: Tip) => (
-                  <div key={tip.id} className="border border-black p-4">
-                    <div className="flex justify-between items-start mb-4 pb-2 border-b border-black">
-                      <div>
-                        <div className="font-bold uppercase tracking-wider">
-                          From: {tip.nameOrAlias || "ANONYMOUS"}
-                        </div>
-                        {tip.contactEmail && (
-                          <div className="text-xs font-mono mt-1">Contact: {tip.contactEmail}</div>
-                        )}
-                      </div>
-                      <div className="text-xs text-right">
-                        <div>ID: #{tip.id}</div>
-                        <div>{new Date(tip.createdAt).toLocaleString()}</div>
-                      </div>
-                    </div>
-                    
-                    <div className="mb-4">
-                      <div className="text-xs font-bold uppercase tracking-widest mb-1 text-gray-500">Message</div>
-                      <div className="font-serif leading-relaxed whitespace-pre-wrap">{tip.message}</div>
-                    </div>
-                    
-                    {tip.provenance && (
-                      <div className="bg-gray-50 p-3 border border-gray-300">
-                        <div className="text-xs font-bold uppercase tracking-widest mb-1 text-gray-500">Provenance / Source</div>
-                        <div className="text-sm font-serif">{tip.provenance}</div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="py-12 text-center border border-dashed border-black">
-                <p className="text-sm uppercase tracking-widest font-bold">No tips found</p>
-              </div>
-            )}
+        {/* Tablet tab nav (shorter labels) */}
+        <nav className="hidden md:flex lg:hidden overflow-x-auto border-t border-gray-800">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => navigate(tab.id)}
+              className={`px-3 py-2 text-[10px] font-bold uppercase tracking-widest whitespace-nowrap transition-colors ${
+                activeTab === tab.id
+                  ? "bg-white text-black"
+                  : "text-gray-400 hover:text-white hover:bg-gray-800"
+              }`}
+            >
+              {tab.short}
+            </button>
+          ))}
+        </nav>
+      </header>
+
+      {/* Mobile slide-out nav */}
+      {mobileNav && (
+        <div className="md:hidden fixed inset-0 z-40 flex">
+          <div className="bg-black w-64 h-full overflow-y-auto pt-4 pb-8">
+            <nav className="flex flex-col">
+              {TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => navigate(tab.id)}
+                  className={`px-5 py-3 text-left text-xs font-bold uppercase tracking-widest transition-colors ${
+                    activeTab === tab.id
+                      ? "bg-white text-black"
+                      : "text-gray-400 hover:text-white"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
           </div>
-        )}
-      </div>
+          <div className="flex-1 bg-black/50" onClick={() => setMobileNav(false)} />
+        </div>
+      )}
+
+      {/* Main content */}
+      <main className="max-w-6xl mx-auto px-4 py-6">
+        {/* Breadcrumb / section title */}
+        <div className="mb-6">
+          <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-gray-400 mb-0.5">
+            Admin Desk
+          </p>
+          <h1 className="text-xl font-serif font-bold">
+            {TABS.find((t) => t.id === activeTab)?.label}
+          </h1>
+          <div className="h-px bg-gray-200 mt-3" />
+        </div>
+
+        {/* Tab content */}
+        <div>
+          {activeTab === "dashboard"    && <AdminDashboard token={password} onNavigate={navigate} />}
+          {activeTab === "reports"      && <AdminReports token={password} />}
+          {activeTab === "case-files"   && <AdminCaseFiles token={password} />}
+          {activeTab === "uploads"      && <AdminUploads token={password} />}
+          {activeTab === "crime-wire"   && <AdminCrimeWire token={password} />}
+          {activeTab === "reader-inbox" && <AdminReaderInbox token={password} />}
+          {activeTab === "mailing-list" && <AdminMailingList token={password} />}
+          {activeTab === "advertisers"  && <AdminAdvertisers token={password} />}
+          {activeTab === "corrections"  && <AdminCorrections token={password} />}
+          {activeTab === "settings"     && <AdminSettings token={password} />}
+        </div>
+      </main>
     </div>
   );
 }
