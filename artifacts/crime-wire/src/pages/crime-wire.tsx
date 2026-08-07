@@ -170,7 +170,7 @@ export default function CrimeWire() {
               { href: "/crime-wire/archive", label: "Archive" },
               { href: "/crime-wire/reader-desk", label: "Reader Desk" },
               { href: "/crime-wire/press-club", label: "Press Club" },
-              { href: "/crime-wire/game-desk", label: "Game Desk" },
+              { href: "/crime-wire/game-desk", label: "Puzzle Desk" },
               { href: "/crime-wire/corrections", label: "Corrections" },
               { href: "/crime-wire/market", label: "Market Page" },
               { href: "/edition", label: "Current Edition" },
