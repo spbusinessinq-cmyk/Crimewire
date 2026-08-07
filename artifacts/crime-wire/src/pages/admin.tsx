@@ -267,6 +267,16 @@ export default function Admin() {
       {/* Main content */}
       <main className="max-w-6xl mx-auto px-4 py-6">
         <div className="mb-6">
+          {activeTab !== "dashboard" && (
+            <button
+              onClick={() => setActiveTab("dashboard")}
+              aria-label="Back to Admin Desk dashboard"
+              className="inline-flex items-center gap-1.5 mb-3 text-[10px] font-bold uppercase tracking-widest text-gray-500 hover:text-black transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-black rounded-sm"
+            >
+              <span aria-hidden="true">←</span>
+              Admin Desk
+            </button>
+          )}
           <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-gray-400 mb-0.5">
             Admin Desk
           </p>
