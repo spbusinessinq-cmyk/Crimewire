@@ -1,0 +1,4 @@
+# This file makes artifacts/crime-wire a standalone pnpm workspace root.
+# It prevents pnpm from traversing up to the monorepo root when EdgeOne
+# runs `pnpm install` from this directory during deployment.
+packages: []
