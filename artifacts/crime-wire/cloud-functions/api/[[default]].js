@@ -66,7 +66,7 @@ const COOKIE_NAME = "cw_session";
 const COOKIE_OPTS = {
   httpOnly: true,
   secure: process.env.NODE_ENV !== "development",
-  sameSite: "strict",
+  sameSite: "lax",
   maxAge: 8 * 60 * 60 * 1000,
   path: "/",
 };

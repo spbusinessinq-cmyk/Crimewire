@@ -19,6 +19,11 @@ export default defineConfig(async ({ command }): Promise<UserConfig> => {
     process.env.NODE_ENV !== 'production' &&
     !!process.env.REPL_ID;
 
+  // EdgeOne production builds always deploy to the site root.
+  // Only use BASE_PATH when running inside Replit's dev proxy.
+  const isEdgeOneBuild = command === 'build' && !process.env.REPL_ID;
+  const base = isEdgeOneBuild ? '/' : basePath;
+
   const replitPlugins = isReplitDev
     ? [
         await import('@replit/vite-plugin-runtime-error-modal').then((m) => m.default()),
@@ -30,7 +35,7 @@ export default defineConfig(async ({ command }): Promise<UserConfig> => {
     : [];
 
   return {
-    base: basePath,
+    base,
     plugins: [react(), tailwindcss(), ...replitPlugins],
     resolve: {
       alias: {
