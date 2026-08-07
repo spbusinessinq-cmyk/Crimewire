@@ -123,11 +123,11 @@ export default function Admin() {
         <header className="border-b-4 border-black pb-4 mb-8 flex justify-between items-end">
           <div>
             <h1 className="text-4xl font-serif font-black uppercase">Admin Desk</h1>
-            <p className="text-sm font-bold uppercase tracking-widest mt-1">Los Angeles Crime Wire</p>
+            <p className="text-sm font-bold uppercase tracking-widest mt-1">RSR Crime Division</p>
           </div>
           <div className="flex items-center gap-4">
             <Link href="/" className="text-xs font-bold uppercase tracking-widest hover:underline">
-              Front Page
+              Public Site
             </Link>
             <button
               onClick={() => setIsAuthenticated(false)}
