@@ -186,13 +186,17 @@ export default function Home() {
                 </h3>
               </div>
 
-              {/* Headline Image — collapses to a compact editorial line when no archival image is available */}
+              {/* Headline Image — Biltmore Hotel, South Grand Avenue, 1947 (1024×1024 square asset)
+                   Served from public/images/biltmore.jpg so EdgeOne's static layer always has it.
+                   aspect-square preserves the full composition; object-cover object-center fills
+                   the square without letterboxing. Fallback strip only fires if the file is
+                   genuinely absent (never under normal conditions). */}
               <figure className="mb-8 border border-black p-1">
                 {!imageError && (
-                  <div className="aspect-[16/9] w-full bg-gray-100 overflow-hidden relative">
+                  <div className="w-full aspect-square overflow-hidden relative bg-gray-900">
                     <img
-                      src="/attached_assets/generated_images/biltmore.jpg"
-                      alt="Biltmore Hotel exterior 1947"
+                      src="/images/biltmore.jpg"
+                      alt="Biltmore Hotel, South Grand Avenue, Los Angeles, 1947"
                       className="w-full h-full object-cover object-center halftone"
                       onError={() => setImageError(true)}
                     />
