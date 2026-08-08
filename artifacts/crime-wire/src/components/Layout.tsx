@@ -136,7 +136,7 @@ export default function Layout({ children }: LayoutProps) {
               Los Angeles Crime Wire is a publication of RSR Crime Division
             </p>
             <p className="text-xs uppercase tracking-widest text-gray-400 mt-2">
-              crimewire.rsrintel.com · coming soon
+              lacrimewire.online
             </p>
             <p className="text-[10px] uppercase tracking-widest text-gray-500 mt-4">
               © RSR Crime Division. All rights reserved.
