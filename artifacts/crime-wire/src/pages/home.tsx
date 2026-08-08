@@ -62,6 +62,7 @@ export default function Home() {
 
   const [subLoading, setSubLoading] = useState(false);
   const [tipLoading, setTipLoading] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   const onSubSubmit = async (data: SubscriptionForm) => {
     setSubDuplicate(false);
@@ -185,23 +186,24 @@ export default function Home() {
                 </h3>
               </div>
 
-              {/* Headline Image Placeholder */}
+              {/* Headline Image — collapses to a compact editorial line when no archival image is available */}
               <figure className="mb-8 border border-black p-1">
-                <div className="aspect-[16/9] w-full bg-gray-200 overflow-hidden relative">
-                  <img 
-                    src="/attached_assets/generated_images/biltmore.jpg" 
-                    alt="Biltmore Hotel exterior 1947" 
-                    className="w-full h-full object-cover halftone"
-                    onError={(e) => {
-                      // Fallback if generated image not available
-                      (e.target as HTMLImageElement).src = 'data:image/svg+xml;charset=UTF-8,<svg xmlns="http://www.w3.org/2000/svg" width="800" height="450" viewBox="0 0 800 450"><rect width="800" height="450" fill="%23222"/><text x="400" y="225" font-family="monospace" font-size="24" fill="%23888" text-anchor="middle">ARCHIVAL IMAGE PENDING</text></svg>';
-                    }}
-                  />
-                  <div className="absolute inset-0 bg-black/10 mix-blend-multiply pointer-events-none"></div>
-                </div>
-                <figcaption className="p-2 border-t border-black text-[10px] font-bold uppercase tracking-widest flex justify-between">
+                {!imageError && (
+                  <div className="aspect-[16/9] w-full bg-gray-100 overflow-hidden relative">
+                    <img
+                      src="/attached_assets/generated_images/biltmore.jpg"
+                      alt="Biltmore Hotel exterior 1947"
+                      className="w-full h-full object-cover object-center halftone"
+                      onError={() => setImageError(true)}
+                    />
+                    <div className="absolute inset-0 bg-black/10 mix-blend-multiply pointer-events-none" />
+                  </div>
+                )}
+                <figcaption className={`p-2 text-[10px] font-bold uppercase tracking-widest flex justify-between items-center${!imageError ? ' border-t border-black' : ''}`}>
                   <span>Biltmore Hotel · South Grand Avenue · 1947</span>
-                  <span>BDH-002 Archive</span>
+                  <span className={imageError ? 'text-gray-400 font-mono font-normal normal-case tracking-normal' : ''}>
+                    {imageError ? 'Archival image — reference pending' : 'BDH-002 Archive'}
+                  </span>
                 </figcaption>
               </figure>
 
@@ -296,7 +298,8 @@ export default function Home() {
                   </button>
                 </div>
               ) : (
-                <form onSubmit={subForm.handleSubmit(onSubSubmit)} className="space-y-4">
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                <form onSubmit={subForm.handleSubmit(onSubSubmit as any)} className="space-y-4">
                   {subDuplicate && (
                     <div className="bg-black text-white p-3 text-xs font-bold uppercase tracking-wider text-center">
                       This address is already on the list.

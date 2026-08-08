@@ -127,6 +127,7 @@ export function Btn({
   variant = "primary",
   disabled,
   type = "button",
+  size,
   className = "",
 }: {
   children: React.ReactNode;
@@ -134,6 +135,8 @@ export function Btn({
   variant?: "primary" | "secondary" | "danger" | "ghost";
   disabled?: boolean;
   type?: "button" | "submit" | "reset";
+  /** "sm" | "md" (default) | "lg" */
+  size?: string;
   className?: string;
 }) {
   const variants = {
@@ -142,12 +145,18 @@ export function Btn({
     danger: "bg-red-600 text-white hover:bg-red-700 border border-red-600",
     ghost: "bg-transparent text-gray-600 hover:text-black border border-transparent hover:border-gray-200",
   };
+  const sizes: Record<string, string> = {
+    sm: "px-2 py-1 text-[10px]",
+    md: "px-4 py-2 text-xs",
+    lg: "px-6 py-3 text-sm",
+  };
+  const sizeCls = (size && sizes[size]) ? sizes[size] : sizes.md;
   return (
     <button
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`px-4 py-2 text-xs font-bold uppercase tracking-widest rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]} ${className}`}
+      className={`${sizeCls} font-bold uppercase tracking-widest rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${variants[variant]} ${className}`}
     >
       {children}
     </button>
@@ -158,15 +167,25 @@ export function Field({
   label,
   children,
   className = "",
+  required,
+  hint,
 }: {
   label: string;
   children: React.ReactNode;
   className?: string;
+  /** Renders a red asterisk after the label */
+  required?: boolean;
+  /** Renders a helper line below the field */
+  hint?: string;
 }) {
   return (
     <div className={className}>
-      <label className={labelCls}>{label}</label>
+      <label className={labelCls}>
+        {label}
+        {required && <span className="text-red-500 ml-0.5">*</span>}
+      </label>
       {children}
+      {hint && <p className="text-[10px] text-gray-400 mt-1">{hint}</p>}
     </div>
   );
 }

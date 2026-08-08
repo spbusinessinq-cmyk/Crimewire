@@ -335,7 +335,8 @@ export default function CrimeWire() {
                   </button>
                 </div>
               ) : (
-                <form onSubmit={subForm.handleSubmit(onSubSubmit)} className="space-y-4">
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                <form onSubmit={subForm.handleSubmit(onSubSubmit as any)} className="space-y-4">
                   {subDuplicate && (
                     <div className="bg-black text-white p-3 text-xs font-bold uppercase tracking-wider text-center">
                       This address is already on the list.

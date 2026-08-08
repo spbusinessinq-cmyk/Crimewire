@@ -20,16 +20,20 @@ export default function Layout({ children }: LayoutProps) {
   const [location] = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  // Quick close on location change
+  // Scroll to top and close menu on every route change
   useEffect(() => {
+    window.scrollTo(0, 0);
     setIsMenuOpen(false);
   }, [location]);
 
   return (
     <div className="min-h-[100dvh] bg-white text-black font-sans w-full flex flex-col selection:bg-black selection:text-white">
-      {/* Navigation bar */}
-      <nav className="sticky top-0 z-50 bg-black text-white w-full border-b border-black">
-        <div className="max-w-[1400px] mx-auto px-4 lg:px-8 py-3 flex items-center justify-between">
+      {/* Navigation bar — iOS safe-area-inset-top keeps content below the notch */}
+      <nav
+        className="sticky top-0 z-50 bg-black text-white w-full border-b border-black"
+        style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top, 0px))' }}
+      >
+        <div className="max-w-[1400px] mx-auto px-4 lg:px-8 pb-3 flex items-center justify-between">
           <Link href="/" className="flex flex-col group">
             <span className="font-headline font-bold text-[18px] uppercase tracking-widest leading-none group-hover:text-gray-300 transition-colors">
               RSR Crime Division
@@ -143,6 +147,8 @@ export default function Layout({ children }: LayoutProps) {
           </div>
         </div>
       </footer>
+      {/* iOS home-indicator safe area */}
+      <div style={{ height: 'env(safe-area-inset-bottom, 0px)', background: 'black' }} />
     </div>
   );
 }

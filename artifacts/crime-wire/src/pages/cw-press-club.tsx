@@ -191,7 +191,8 @@ export default function CwPressClub() {
             </div>
           )}
 
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+          <form onSubmit={form.handleSubmit(onSubmit as any)} className="space-y-6">
             <input type="hidden" {...form.register("tier")} />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">

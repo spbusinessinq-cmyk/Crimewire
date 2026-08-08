@@ -71,6 +71,8 @@
 
 /* LIGHT MODE */
 :root {
+  /* Sticky nav height — keep in sync with Layout.tsx nav padding + content */
+  --nav-height: 60px;
   --button-outline: rgba(0, 0, 0, 0.1);
   --badge-outline: rgba(0, 0, 0, 0.05);
 
@@ -197,6 +199,12 @@
 @layer base {
   * {
     @apply border-border;
+  }
+
+  /* Offset scroll targets so the sticky nav never covers them.
+     scroll-padding-top applies to el.scrollIntoView() and hash navigation. */
+  html {
+    scroll-padding-top: calc(var(--nav-height) + env(safe-area-inset-top, 0px) + 12px);
   }
 
   body {

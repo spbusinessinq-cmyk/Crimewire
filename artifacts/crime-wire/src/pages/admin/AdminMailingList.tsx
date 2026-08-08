@@ -150,10 +150,25 @@ export default function AdminMailingList() {
         <Btn
           variant="secondary"
           size="xs"
-          onClick={() => downloadCsv(
-            activeTab === "digital" ? filteredSubs : filteredPc,
-            activeTab === "digital" ? "digital-readers.csv" : "press-club.csv"
-          )}
+          onClick={() => {
+            if (activeTab === "digital") {
+              const csv = [
+                "id,email,name,zip,editionType,consent,createdAt",
+                ...filteredSubs.map((s) =>
+                  `${s.id},"${s.email}","${s.name ?? ""}","${s.zip ?? ""}","${s.editionType}",${s.consent},"${s.createdAt}"`
+                ),
+              ].join("\n");
+              downloadCsv(csv, "digital-readers.csv");
+            } else {
+              const csv = [
+                "id,email,name,tier,city,zip,status,adminNote,createdAt",
+                ...filteredPc.map((m) =>
+                  `${m.id},"${m.email}","${m.name ?? ""}","${m.tier}","${m.city ?? ""}","${m.zip ?? ""}","${m.status}","${m.adminNote ?? ""}","${m.createdAt}"`
+                ),
+              ].join("\n");
+              downloadCsv(csv, "press-club.csv");
+            }
+          }}
         >
           Export CSV
         </Btn>

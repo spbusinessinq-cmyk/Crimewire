@@ -233,20 +233,28 @@ app.post("/subscriptions", async (req, res) => {
     return res.status(400).json({ error: "Invalid email address" });
   }
   try {
+    // Deduplication — case-insensitive email check before any write
+    const all = await getAll("cw-subs");
+    const normalised = email.trim().toLowerCase();
+    if (all.some((r) => r.email.trim().toLowerCase() === normalised)) {
+      return res.status(409).json({ error: "Email already subscribed" });
+    }
     const id = await nextId("cw-subs");
     const record = {
       id,
-      email,
-      name: name ?? null,
-      zip: zip ?? null,
+      email: email.trim(),
+      name: name?.trim() || null,
+      zip: zip?.trim() || null,
       editionType,
+      consent: true,
+      consentDate: now(),
       status: "active",
       createdAt: now(),
     };
-    const all = await getAll("cw-subs");
     all.push(record);
     await saveAll("cw-subs", all);
-    return res.status(201).json(record);
+    // Return minimal confirmation — do not echo email back in body
+    return res.status(201).json({ id, createdAt: record.createdAt });
   } catch (e) {
     console.error("POST /subscriptions:", e);
     return res.status(500).json({ error: "Storage error" });
@@ -1250,6 +1258,70 @@ app.put("/settings", requireAdmin, async (req, res) => {
     return res.json({ key, value: settings[key] ?? null });
   } catch (e) {
     return res.status(500).json({ error: "Storage error" });
+  }
+});
+
+// =============================================================
+// ── First-run seed (public editions only) ────────────────────
+// Seeds only when the issues store is completely empty.
+// Safe to call on every deploy — idempotent by design.
+// Run once after first EdgeOne deployment via:
+//   curl -X POST https://lacrimewire.online/api/admin/seed \
+//        -H "Cookie: cw_session=<your-admin-token>"
+// =============================================================
+
+app.post("/admin/seed", requireAdmin, async (_req, res) => {
+  try {
+    const existing = await getAll("cw-issues");
+    if (existing.length > 0) {
+      return res.json({
+        seeded: false,
+        message: "Issues store already has data — seed skipped.",
+        count: existing.length,
+      });
+    }
+    const ts = now();
+    const seeds = [
+      {
+        id: 1,
+        volume: 1,
+        number: "No. 1",
+        title: "The Missing Exit",
+        tagline: "The Biltmore Hotel and the last confirmed location in the Black Dahlia movement record.",
+        headline: "The Missing Exit",
+        description:
+          "The Biltmore Hotel and the last confirmed location in the Black Dahlia movement record.",
+        pdfUrl: "/editions/edition-001-the-missing-exit.pdf",
+        pageCount: 12,
+        accessLevel: "public",
+        status: "archived",
+        publishDate: "2026-07-24T00:00:00.000Z",
+        createdAt: ts,
+      },
+      {
+        id: 2,
+        volume: 1,
+        number: "No. 2",
+        title: "August 5, 2026",
+        tagline: "Los Angeles Crime Wire — Second Edition.",
+        headline: null,
+        description: "Los Angeles Crime Wire — Second Edition.",
+        pdfUrl: "/editions/edition-002-august-5-2026.pdf",
+        pageCount: 12,
+        accessLevel: "public",
+        status: "published",
+        publishDate: "2026-08-05T00:00:00.000Z",
+        createdAt: ts,
+      },
+    ];
+    // Set sequence counter to match highest seeded ID
+    const seqStore = getStore("cw-issues");
+    await seqStore.set("seq", String(seeds.length));
+    await saveAll("cw-issues", seeds);
+    return res.json({ seeded: true, message: "Seeded 2 public editions.", count: seeds.length });
+  } catch (e) {
+    console.error("POST /admin/seed:", e);
+    return res.status(500).json({ error: "Seed failed: " + e.message });
   }
 });
 
