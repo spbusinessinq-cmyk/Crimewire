@@ -463,7 +463,7 @@ export default function Home() {
               { num: 7,  title: "Bureau Case Desk",           desc: "Active, developing, and pending Crime Division investigations." },
               { num: 8,  title: "From the Morgue",            desc: "Archival highlights, throwbacks, and then-versus-now reporting." },
               { num: 9,  title: "Reader Desk & Press Club",   desc: "Letters, community spotlight, Ask the Desk, tips, and membership." },
-              { num: 10, title: "Puzzle Desk",                desc: "Crossword, Spot the Difference, trivia, and weekly clues." },
+              { num: 10, title: "Shell Shocker & Crossword",   desc: "The cycle's most staggering verified crime story — alongside the case-file crossword, trivia, and weekly clues." },
               { num: 11, title: "Ink & Alibi",                desc: "Recurring comic, Wire Hunt, and reader artwork." },
               { num: 12, title: "Market Page",                desc: "Vintage-style advertisements, Morning Joe comic, and Press Club QR." },
             ].map((section) => (

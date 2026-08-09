@@ -7,14 +7,14 @@ const GAMES = [
     title: "The Crime Wire Crossword",
     desc: "A 15×15 crossword built from Los Angeles crime history, court vocabulary, investigative terminology, and Black Dahlia case lore. Clues range from straight definitions to noir misdirection.",
     status: "COMING NEXT THURSDAY",
-    note: "The crossword runs in Section 11 of the print edition. An interactive version is in development.",
+    note: "The crossword runs in Section 10 of the paper alongside the Shell Shocker. An interactive version is in development.",
   },
   {
-    id: "spot",
-    title: "Spot the Difference",
-    desc: "Two nearly identical crime-scene photographs. Find all differences before time runs out. Each week's photographs are drawn from the current investigation.",
-    status: "COMING NEXT THURSDAY",
-    note: "Requires the current edition artwork. Publishes alongside the print edition.",
+    id: "shell-shocker",
+    title: "Shell Shocker",
+    desc: "The cycle's most staggering verified crime story — sourced, documented, and stranger than fiction. Selected each week from active case files, court records, and archival reports.",
+    status: "IN EACH ISSUE",
+    note: "Shell Shocker appears in Section 10 alongside the crossword and weekly trivia clues.",
   },
   {
     id: "wirehunt",
@@ -36,7 +36,7 @@ const GAMES = [
 
 export default function CwGameDesk() {
   useEffect(() => {
-    document.title = "Game Desk | Los Angeles Crime Wire";
+    document.title = "Shell Shocker & Crossword | Los Angeles Crime Wire";
   }, []);
 
   return (
@@ -44,16 +44,16 @@ export default function CwGameDesk() {
       <header className="mb-10 border-b-4 border-black pb-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500 block mb-2">Los Angeles Crime Wire</span>
-            <h1 className="text-4xl font-headline font-bold uppercase tracking-widest">Game Desk</h1>
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-gray-500 block mb-2">Los Angeles Crime Wire · Section 10</span>
+            <h1 className="text-4xl font-headline font-bold uppercase tracking-widest">Shell Shocker &amp; Crossword</h1>
           </div>
           <Link href="/crime-wire" className="text-[10px] font-bold uppercase tracking-widest border-b border-black hover:text-gray-600 transition-colors self-end pb-0.5">
             ← Crime Wire
           </Link>
         </div>
         <p className="font-serif italic text-sm text-gray-700 mt-4 max-w-2xl">
-          Puzzles, hunts, and games drawn from the current issue. Print-edition content ships in Section 11.
-          Digital interactive versions are in development.
+          The cycle's most staggering verified crime story. The case-file crossword, weekly trivia, and the Wire Hunt.
+          Print-edition content ships in Section 10.
         </p>
       </header>
 

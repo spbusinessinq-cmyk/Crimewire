@@ -1,20 +1,30 @@
-import { useState, useEffect } from "react";
-import { api, Badge, Spinner, EmptyState, ErrorMsg, SuccessMsg, Btn, Field, inputCls, selectCls, fmtDate, downloadCsv } from "./shared";
-
-interface Props {}
+import { useState, useEffect, useCallback } from "react";
+import { api, Badge, Spinner, EmptyState, ErrorMsg, SuccessMsg, Btn, Field, inputCls, selectCls, textareaCls, fmtDate, downloadCsv } from "./shared";
 
 interface Subscriber {
   id: number; email: string; name: string | null; zip: string | null;
-  editionType: string; consent: boolean; createdAt: string;
+  editionType: string; consent: boolean; status: string; createdAt: string;
 }
-
 interface PressClubMember {
   id: number; email: string; name: string | null; tier: string;
   city: string | null; zip: string | null; mailingAddress: string | null;
   status: string; adminNote: string | null; createdAt: string;
 }
+interface EmailStatus {
+  configured: boolean;
+  missing: string[];
+  optional: string[];
+  siteUrl: string;
+  hasNewsroom: boolean;
+  recentLog: LogEntry[];
+}
+interface LogEntry {
+  id: number; type: string; subject?: string; to?: string;
+  sent?: number; failed?: number; total?: number; ok?: boolean;
+  error?: string | null; timestamp: string; category?: string;
+}
 
-type TabId = "digital" | "press_club";
+type TabId = "digital" | "press_club" | "dispatch";
 
 const EDITION_LABELS: Record<string, string> = {
   digital: "Digital Edition",
@@ -26,7 +36,9 @@ export default function AdminMailingList() {
   const [activeTab, setActiveTab] = useState<TabId>("digital");
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
   const [pressClub, setPressClub] = useState<PressClubMember[]>([]);
+  const [emailStatus, setEmailStatus] = useState<EmailStatus | null>(null);
   const [loading, setLoading] = useState(true);
+  const [emailLoading, setEmailLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [filterEdition, setFilterEdition] = useState("");
   const [filterTier, setFilterTier] = useState("");
@@ -36,43 +48,75 @@ export default function AdminMailingList() {
   const [success, setSuccess] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const loadAll = () => {
+  // Dispatch form state
+  const [testTo, setTestTo] = useState("");
+  const [testSending, setTestSending] = useState(false);
+  const [testResult, setTestResult] = useState<string>("");
+  const [issueSubject, setIssueSubject] = useState("");
+  const [issuePreview, setIssuePreview] = useState("");
+  const [issueUrl, setIssueUrl] = useState("");
+  const [issueConfirm, setIssueConfirm] = useState(false);
+  const [issueSending, setIssueSending] = useState(false);
+  const [issueResult, setIssueResult] = useState<{ ok: boolean; msg: string; sent?: number; failed?: number } | null>(null);
+
+  const loadAll = useCallback(() => {
     setLoading(true);
     Promise.all([
       api("/subscriptions").then((r) => r.ok ? r.json() : []),
       api("/press-club").then((r) => r.ok ? r.json() : []),
     ]).then(([subs, pc]) => {
-      // Remove obvious test records
-      const cleanSubs = (subs as Subscriber[]).filter(
-        (s) => !s.email.includes("test") && !s.email.includes("audit@") && !s.email.includes("example.com")
-      );
-      const cleanPc = (pc as PressClubMember[]).filter(
-        (m) => !m.email.includes("test") && !m.email.includes("audit@") && !m.email.includes("example.com")
-      );
-      setSubscribers(cleanSubs);
-      setPressClub(cleanPc);
+      const clean = (arr: any[], email: string) =>
+        arr.filter((s: any) => !s.email.includes("test@") && !s.email.includes("audit@") && !s.email.includes("example.com"));
+      setSubscribers(clean(subs as Subscriber[], ""));
+      setPressClub(clean(pc as PressClubMember[], ""));
     }).finally(() => setLoading(false));
-  };
+  }, []);
 
-  useEffect(loadAll, []);
+  const loadEmailStatus = useCallback(() => {
+    setEmailLoading(true);
+    api("/admin/email/status").then(async (r) => {
+      if (r.ok) setEmailStatus(await r.json());
+    }).finally(() => setEmailLoading(false));
+  }, []);
+
+  useEffect(() => { loadAll(); loadEmailStatus(); }, [loadAll, loadEmailStatus]);
 
   async function updatePressClub(id: number, updates: Partial<PressClubMember>) {
     setSaving(true); setError(""); setSuccess("");
-    const res = await api(`/press-club/${id}`, {
-      method: "PATCH", body: JSON.stringify(updates),
-    });
-    if (res.ok) {
-      setSuccess("Member updated.");
-      setEditingNote(null);
-      loadAll();
-    } else {
-      const d = await res.json();
-      setError(d.error ?? "Update failed");
-    }
+    const res = await api(`/press-club/${id}`, { method: "PATCH", body: JSON.stringify(updates) });
+    if (res.ok) { setSuccess("Member updated."); setEditingNote(null); loadAll(); }
+    else { const d = await res.json(); setError(d.error ?? "Update failed"); }
     setSaving(false);
   }
 
-  // Filtered subscribers
+  async function sendTest() {
+    if (!testTo.trim()) return;
+    setTestSending(true); setTestResult("");
+    const res = await api("/admin/email/test", { method: "POST", body: JSON.stringify({ to: testTo.trim() }) });
+    const d = await res.json();
+    setTestResult(res.ok ? `✓ Delivered to ${testTo} at ${d.timestamp}` : `✗ ${d.error}`);
+    if (res.ok) loadEmailStatus();
+    setTestSending(false);
+  }
+
+  async function sendIssue() {
+    if (!issueSubject.trim() || !issueConfirm) return;
+    setIssueSending(true); setIssueResult(null);
+    const res = await api("/admin/email/send-issue", {
+      method: "POST",
+      body: JSON.stringify({ subject: issueSubject, preview: issuePreview, issueUrl, confirmSend: true }),
+    });
+    const d = await res.json();
+    if (res.ok) {
+      setIssueResult({ ok: true, msg: `Dispatched ${d.sent} of ${d.total}`, sent: d.sent, failed: d.failed });
+      setIssueConfirm(false);
+      loadEmailStatus();
+    } else {
+      setIssueResult({ ok: false, msg: d.error });
+    }
+    setIssueSending(false);
+  }
+
   const filteredSubs = subscribers.filter((s) => {
     if (search && !s.email.toLowerCase().includes(search.toLowerCase()) &&
         !(s.name ?? "").toLowerCase().includes(search.toLowerCase())) return false;
@@ -80,7 +124,6 @@ export default function AdminMailingList() {
     return true;
   });
 
-  // Filtered press club
   const filteredPc = pressClub.filter((m) => {
     if (search && !m.email.toLowerCase().includes(search.toLowerCase()) &&
         !(m.name ?? "").toLowerCase().includes(search.toLowerCase())) return false;
@@ -88,34 +131,71 @@ export default function AdminMailingList() {
     return true;
   });
 
+  const activeSubs = subscribers.filter((s) => s.status === "active");
   const printWaitlist = filteredPc.filter((m) => m.tier === "print_waitlist");
   const pressClubMembers = filteredPc.filter((m) => m.tier !== "print_waitlist");
 
-  return (
-    <div>
-      {/* Notice */}
-      <div className="border border-gray-200 bg-gray-50 p-3 mb-4">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Email Delivery Status</p>
-        <p className="text-xs text-gray-600">
-          No outbound email provider is connected. Signups are recorded but no confirmation or dispatch emails are sent.
-          Connect Resend or SendGrid to activate delivery.
+  // ── Email status banner ────────────────────────────────────────
+
+  const StatusBanner = () => {
+    if (emailLoading) return <div className="border border-gray-200 bg-gray-50 p-3 mb-4 text-xs text-gray-400">Checking email configuration…</div>;
+    if (!emailStatus) return null;
+
+    if (emailStatus.configured) {
+      return (
+        <div className="border border-green-200 bg-green-50 p-3 mb-4">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-green-700 mb-1">✓ Email Connected</p>
+          <p className="text-xs text-green-700">
+            Resend is active. Welcome emails, newsroom notifications, and Thursday Drop dispatch are all operational.
+            {!emailStatus.hasNewsroom && " Add EMAIL_NEWSROOM to enable contact-form notifications to the newsroom."}
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="border border-amber-200 bg-amber-50 p-3 mb-4">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-amber-700 mb-1">⚠ Email Configuration Incomplete</p>
+        <p className="text-xs text-amber-700 mb-2">
+          Signups are stored but no emails are sent. Set the following in Replit → Secrets:
+        </p>
+        <ul className="text-xs text-amber-800 space-y-1 pl-3">
+          {emailStatus.missing.map((k) => (
+            <li key={k} className="font-mono font-bold">{k}</li>
+          ))}
+        </ul>
+        {emailStatus.optional.length > 0 && (
+          <p className="text-[10px] text-amber-600 mt-2">
+            Also recommended: {emailStatus.optional.join(", ")}
+          </p>
+        )}
+        <p className="text-[10px] text-amber-600 mt-2 border-t border-amber-200 pt-2">
+          <strong>Setup:</strong> Get a free Resend account at resend.com → create an API key →
+          verify your sender domain → set RESEND_API_KEY and EMAIL_FROM (e.g. "Crime Wire &lt;noreply@lacrimewire.online&gt;").
         </p>
       </div>
+    );
+  };
+
+  return (
+    <div>
+      <StatusBanner />
 
       {/* Tabs */}
-      <div className="flex items-center gap-0 mb-4 border-b border-gray-200">
+      <div className="flex items-center gap-0 mb-4 border-b border-gray-200 overflow-x-auto">
         {([
-          { id: "digital", label: "Digital Readers", count: subscribers.length },
-          { id: "press_club", label: "Press Club", count: pressClub.length },
-        ] as const).map((t) => (
+          { id: "digital" as TabId, label: "Digital Readers", count: subscribers.length },
+          { id: "press_club" as TabId, label: "Press Club", count: pressClub.length },
+          { id: "dispatch" as TabId, label: "Dispatch", count: null },
+        ]).map((t) => (
           <button
             key={t.id}
             onClick={() => setActiveTab(t.id)}
-            className={`px-4 py-2 text-xs font-bold uppercase tracking-widest border-b-2 transition-colors ${
+            className={`px-4 py-2 text-xs font-bold uppercase tracking-widest border-b-2 transition-colors whitespace-nowrap ${
               activeTab === t.id ? "border-black text-black" : "border-transparent text-gray-400 hover:text-gray-600"
             }`}
           >
-            {t.label} ({t.count})
+            {t.label}{t.count !== null ? ` (${t.count})` : ""}
           </button>
         ))}
       </div>
@@ -123,63 +203,65 @@ export default function AdminMailingList() {
       {error && <div className="mb-4"><ErrorMsg message={error} /></div>}
       {success && <div className="mb-4"><SuccessMsg message={success} /></div>}
 
-      {/* Search + filters + export */}
-      <div className="flex flex-wrap gap-3 mb-4 items-center">
-        <input
-          className={inputCls + " w-56"}
-          placeholder="Search email or name…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        {activeTab === "digital" && (
-          <select className={selectCls + " w-44"} value={filterEdition} onChange={(e) => setFilterEdition(e.target.value)}>
-            <option value="">All editions</option>
-            <option value="digital">Digital</option>
-            <option value="mailed">Mailed (Waitlist)</option>
-            <option value="both">Both</option>
-          </select>
-        )}
-        {activeTab === "press_club" && (
-          <select className={selectCls + " w-44"} value={filterTier} onChange={(e) => setFilterTier(e.target.value)}>
-            <option value="">All tiers</option>
-            <option value="press_club">Press Club</option>
-            <option value="founding">Founding Supporter</option>
-            <option value="print_waitlist">Print Waitlist</option>
-          </select>
-        )}
-        <Btn
-          variant="secondary"
-          size="xs"
-          onClick={() => {
-            if (activeTab === "digital") {
-              const csv = [
-                "id,email,name,zip,editionType,consent,createdAt",
-                ...filteredSubs.map((s) =>
-                  `${s.id},"${s.email}","${s.name ?? ""}","${s.zip ?? ""}","${s.editionType}",${s.consent},"${s.createdAt}"`
-                ),
-              ].join("\n");
-              downloadCsv(csv, "digital-readers.csv");
-            } else {
-              const csv = [
-                "id,email,name,tier,city,zip,status,adminNote,createdAt",
-                ...filteredPc.map((m) =>
-                  `${m.id},"${m.email}","${m.name ?? ""}","${m.tier}","${m.city ?? ""}","${m.zip ?? ""}","${m.status}","${m.adminNote ?? ""}","${m.createdAt}"`
-                ),
-              ].join("\n");
-              downloadCsv(csv, "press-club.csv");
-            }
-          }}
-        >
-          Export CSV
-        </Btn>
-        <span className="text-xs text-gray-400 self-center">
-          {activeTab === "digital" ? filteredSubs.length : filteredPc.length} results
-        </span>
-      </div>
+      {/* ── Digital + Press Club filter bar ──── */}
+      {activeTab !== "dispatch" && (
+        <div className="flex flex-wrap gap-3 mb-4 items-center">
+          <input
+            className={inputCls + " w-56"}
+            placeholder="Search email or name…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          {activeTab === "digital" && (
+            <select className={selectCls + " w-44"} value={filterEdition} onChange={(e) => setFilterEdition(e.target.value)}>
+              <option value="">All editions</option>
+              <option value="digital">Digital</option>
+              <option value="mailed">Mailed (Waitlist)</option>
+              <option value="both">Both</option>
+            </select>
+          )}
+          {activeTab === "press_club" && (
+            <select className={selectCls + " w-44"} value={filterTier} onChange={(e) => setFilterTier(e.target.value)}>
+              <option value="">All tiers</option>
+              <option value="press_club">Press Club</option>
+              <option value="founding">Founding Supporter</option>
+              <option value="print_waitlist">Print Waitlist</option>
+            </select>
+          )}
+          <Btn
+            variant="secondary"
+            size="xs"
+            onClick={() => {
+              if (activeTab === "digital") {
+                const csv = [
+                  "id,email,name,zip,editionType,consent,createdAt",
+                  ...filteredSubs.map((s) =>
+                    `${s.id},"${s.email}","${s.name ?? ""}","${s.zip ?? ""}","${s.editionType}",${s.consent},"${s.createdAt}"`
+                  ),
+                ].join("\n");
+                downloadCsv(csv, "digital-readers.csv");
+              } else {
+                const csv = [
+                  "id,email,name,tier,city,zip,status,adminNote,createdAt",
+                  ...filteredPc.map((m) =>
+                    `${m.id},"${m.email}","${m.name ?? ""}","${m.tier}","${m.city ?? ""}","${m.zip ?? ""}","${m.status}","${m.adminNote ?? ""}","${m.createdAt}"`
+                  ),
+                ].join("\n");
+                downloadCsv(csv, "press-club.csv");
+              }
+            }}
+          >
+            Export CSV
+          </Btn>
+          <span className="text-xs text-gray-400 self-center">
+            {activeTab === "digital" ? filteredSubs.length : filteredPc.length} results
+          </span>
+        </div>
+      )}
 
-      {loading ? <Spinner /> : (
+      {loading && activeTab !== "dispatch" ? <Spinner /> : (
         <>
-          {/* Digital Readers */}
+          {/* ── Digital Readers ──── */}
           {activeTab === "digital" && (
             filteredSubs.length === 0 ? (
               <EmptyState message="No digital subscribers match this filter" />
@@ -194,6 +276,7 @@ export default function AdminMailingList() {
                         <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
                           {EDITION_LABELS[s.editionType] ?? s.editionType}
                         </span>
+                        <Badge status={s.status} />
                       </div>
                       <div className="flex items-center gap-3 mt-0.5">
                         <span className="text-[10px] text-gray-400">Signed up {fmtDate(s.createdAt)}</span>
@@ -207,10 +290,9 @@ export default function AdminMailingList() {
             )
           )}
 
-          {/* Press Club */}
+          {/* ── Press Club ──── */}
           {activeTab === "press_club" && (
             <div className="space-y-6">
-              {/* Press Club + Founding */}
               <div>
                 <h3 className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
                   Press Club & Founding Supporters ({pressClubMembers.length})
@@ -263,15 +345,10 @@ export default function AdminMailingList() {
                   </div>
                 )}
               </div>
-
-              {/* Print Waitlist */}
               <div>
                 <h3 className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
                   Print Edition Waitlist ({printWaitlist.length})
                 </h3>
-                <p className="text-xs text-gray-400 mb-3">
-                  Ordered by signup date. Priority by LA zip code when print run begins.
-                </p>
                 {printWaitlist.length === 0 ? (
                   <EmptyState message="Print waitlist is empty" />
                 ) : (
@@ -285,12 +362,8 @@ export default function AdminMailingList() {
                             {m.name && <span className="text-xs text-gray-500">{m.name}</span>}
                             <Badge status={m.status} />
                           </div>
-                          {(m.city || m.zip) && (
-                            <p className="text-[10px] text-gray-400">{[m.city, m.zip].filter(Boolean).join(" · ")}</p>
-                          )}
-                          {m.mailingAddress && (
-                            <p className="text-[10px] text-gray-400">{m.mailingAddress}</p>
-                          )}
+                          {(m.city || m.zip) && <p className="text-[10px] text-gray-400">{[m.city, m.zip].filter(Boolean).join(" · ")}</p>}
+                          {m.mailingAddress && <p className="text-[10px] text-gray-400">{m.mailingAddress}</p>}
                         </div>
                         <span className="text-[10px] text-gray-400 whitespace-nowrap">{fmtDate(m.createdAt)}</span>
                       </div>
@@ -298,6 +371,168 @@ export default function AdminMailingList() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* ── Dispatch ──── */}
+          {activeTab === "dispatch" && (
+            <div className="space-y-8 max-w-xl">
+
+              {/* Send Issue */}
+              <section className="border-2 border-black p-5">
+                <h3 className="text-xs font-bold uppercase tracking-widest border-b border-black pb-3 mb-4">
+                  Send Thursday Drop — {activeSubs.length} active subscriber{activeSubs.length !== 1 ? "s" : ""}
+                </h3>
+
+                {issueResult && (
+                  <div className={`mb-4 p-3 text-xs font-bold uppercase tracking-wider ${issueResult.ok ? "bg-green-50 border border-green-200 text-green-800" : "bg-red-50 border border-red-200 text-red-700"}`}>
+                    {issueResult.msg}
+                    {issueResult.ok && issueResult.failed! > 0 && ` (${issueResult.failed} failed — check delivery log)`}
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  <Field label="Subject line" required hint="Appears in the reader's inbox. Be specific — this is the duplicate-send guard key.">
+                    <input
+                      className={inputCls}
+                      value={issueSubject}
+                      onChange={(e) => setIssueSubject(e.target.value)}
+                      placeholder="Los Angeles Crime Wire — Thursday, Aug 14, 2026"
+                    />
+                  </Field>
+
+                  <Field label="Preview text" hint="Shown below the subject in most email clients. Keep under 90 characters.">
+                    <input
+                      className={inputCls}
+                      value={issuePreview}
+                      onChange={(e) => setIssuePreview(e.target.value)}
+                      placeholder="This week: the Biltmore case, records update, and Shell Shocker."
+                    />
+                  </Field>
+
+                  <Field label="Issue URL" hint="Direct link to the edition PDF or page. Shown as a CTA button in the email.">
+                    <input
+                      className={inputCls}
+                      type="url"
+                      value={issueUrl}
+                      onChange={(e) => setIssueUrl(e.target.value)}
+                      placeholder="https://lacrimewire.online/crime-wire"
+                    />
+                  </Field>
+
+                  <label className="flex items-start gap-3 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={issueConfirm}
+                      onChange={(e) => setIssueConfirm(e.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span className="text-xs text-gray-700">
+                      I confirm this is ready to send. The same subject line cannot be re-sent for 6 hours.
+                    </span>
+                  </label>
+
+                  <Btn
+                    onClick={sendIssue}
+                    disabled={issueSending || !issueSubject.trim() || !issueConfirm || !emailStatus?.configured}
+                  >
+                    {issueSending ? `Sending to ${activeSubs.length} subscribers…` : `Dispatch to ${activeSubs.length} subscribers`}
+                  </Btn>
+
+                  {!emailStatus?.configured && (
+                    <p className="text-[10px] text-amber-600 font-bold uppercase tracking-widest">
+                      Email not configured — complete setup above before dispatching.
+                    </p>
+                  )}
+                </div>
+              </section>
+
+              {/* Test Email */}
+              <section className="border border-gray-200 p-5">
+                <h3 className="text-xs font-bold uppercase tracking-widest border-b border-gray-200 pb-3 mb-4">
+                  Send Test Email
+                </h3>
+                <div className="space-y-3">
+                  <Field label="Recipient address">
+                    <input
+                      className={inputCls}
+                      type="email"
+                      value={testTo}
+                      onChange={(e) => setTestTo(e.target.value)}
+                      placeholder="you@example.com"
+                    />
+                  </Field>
+                  <Btn
+                    variant="secondary"
+                    onClick={sendTest}
+                    disabled={testSending || !testTo.trim() || !emailStatus?.configured}
+                  >
+                    {testSending ? "Sending…" : "Send Test"}
+                  </Btn>
+                  {testResult && (
+                    <p className={`text-xs font-bold uppercase tracking-widest mt-2 ${testResult.startsWith("✓") ? "text-green-700" : "text-red-700"}`}>
+                      {testResult}
+                    </p>
+                  )}
+                </div>
+              </section>
+
+              {/* Delivery Log */}
+              <section>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-xs font-bold uppercase tracking-widest">Delivery Log</h3>
+                  <Btn size="xs" variant="ghost" onClick={loadEmailStatus}>Refresh</Btn>
+                </div>
+
+                {emailLoading ? <Spinner /> : (
+                  !emailStatus?.recentLog?.length ? (
+                    <EmptyState message="No delivery history yet" />
+                  ) : (
+                    <div className="divide-y divide-gray-100 border border-gray-200">
+                      {emailStatus.recentLog.map((entry) => (
+                        <div key={entry.id} className="px-3 py-2.5">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 ${
+                                  entry.type === "campaign" ? "bg-black text-white" :
+                                  entry.type === "welcome"  ? "bg-gray-800 text-white" :
+                                  entry.type === "test"     ? "bg-gray-200 text-gray-700" :
+                                                               "bg-gray-100 text-gray-600"
+                                }`}>{entry.type}</span>
+                                {entry.subject && <span className="text-xs font-medium truncate max-w-[240px]">{entry.subject}</span>}
+                                {entry.to && !entry.subject && <span className="text-xs text-gray-500 truncate">{entry.to}</span>}
+                                {entry.category && <span className="text-[9px] text-gray-400 uppercase">{entry.category}</span>}
+                              </div>
+                              {entry.type === "campaign" && (
+                                <p className="text-[10px] text-gray-500 mt-0.5">
+                                  {entry.sent ?? 0} sent · {entry.failed ?? 0} failed · {entry.total ?? 0} total
+                                </p>
+                              )}
+                              {entry.error && (
+                                <p className="text-[10px] text-red-600 mt-0.5 truncate">{entry.error}</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              {entry.ok === false ? (
+                                <span className="text-[9px] font-bold text-red-600 uppercase">Failed</span>
+                              ) : entry.ok === true ? (
+                                <span className="text-[9px] font-bold text-green-600 uppercase">OK</span>
+                              ) : null}
+                              <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                                {new Date(entry.timestamp).toLocaleString("en-US", {
+                                  month: "short", day: "numeric",
+                                  hour: "numeric", minute: "2-digit", hour12: true
+                                })}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                )}
+              </section>
             </div>
           )}
         </>

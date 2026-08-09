@@ -46,7 +46,7 @@ const TWELVE_SECTIONS = [
   { num: 7,  title: "Bureau Case Desk",          desc: "Active, developing, and pending Crime Division investigations. Cold case updates and file re-openings." },
   { num: 8,  title: "From the Morgue",           desc: "Archival highlights, throwbacks, and then-versus-now reporting from the historical record." },
   { num: 9,  title: "Reader Desk & Press Club",  desc: "Letters, community spotlight, Ask the Desk, tips, and Press Club membership." },
-  { num: 10, title: "Puzzle Desk",               desc: "Crossword, Spot the Difference, trivia, and weekly clues." },
+  { num: 10, title: "Shell Shocker & Crossword",  desc: "The cycle's most staggering verified crime story alongside the case-file crossword, trivia, and weekly clues." },
   { num: 11, title: "Ink & Alibi",               desc: "Recurring comic, Wire Hunt, and reader artwork." },
   { num: 12, title: "Market Page",               desc: "Vintage-style advertisements, Morning Joe comic, and Press Club QR." },
 ];

@@ -148,6 +148,105 @@ async function logAction(action, entityType, entityId, entityTitle, details) {
 }
 
 // =============================================================
+// ── Email helpers (Resend REST API — no extra dependency) ────
+// Config via env: RESEND_API_KEY, EMAIL_FROM, EMAIL_NEWSROOM,
+//                 EMAIL_REPLY_TO, SITE_URL
+// =============================================================
+
+function emailCfg() {
+  return {
+    apiKey:   process.env.RESEND_API_KEY   || null,
+    from:     process.env.EMAIL_FROM       || null,
+    newsroom: process.env.EMAIL_NEWSROOM   || null,
+    replyTo:  process.env.EMAIL_REPLY_TO   || null,
+    siteUrl:  process.env.SITE_URL         || "https://lacrimewire.online",
+  };
+}
+
+function emailReady() {
+  const c = emailCfg();
+  return !!(c.apiKey && c.from);
+}
+
+/** Call Resend REST API. Returns { ok, data?, error? }. */
+async function sendEmail({ to, subject, html, text }) {
+  const c = emailCfg();
+  if (!c.apiKey || !c.from) return { ok: false, error: "Email not configured (RESEND_API_KEY / EMAIL_FROM missing)" };
+  const body = { from: c.from, to: Array.isArray(to) ? to : [to], subject, html };
+  if (text) body.text = text;
+  if (c.replyTo) body.reply_to = c.replyTo;
+  try {
+    const resp = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${c.apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.text().catch(() => resp.status.toString());
+      return { ok: false, error: `Resend ${resp.status}: ${err}` };
+    }
+    return { ok: true, data: await resp.json().catch(() => ({})) };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+/** HMAC-SHA256 token for unsubscribe links — no stored state needed. */
+async function unsubToken(email) {
+  const secret = process.env.SESSION_SECRET || "fallback-secret";
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(email.toLowerCase().trim()));
+  return Buffer.from(sig).toString("hex").slice(0, 40);
+}
+
+/** Append to the email delivery log (max 300 entries). */
+async function logEmail(entry) {
+  try {
+    const store = getStore("cw-email-log");
+    const log = (await store.get("log", { type: "json", consistency: "strong" })) ?? [];
+    log.unshift({ ...entry, id: Date.now() });
+    if (log.length > 300) log.length = 300;
+    await store.setJSON("log", log);
+  } catch (e) {
+    console.error("logEmail failed:", e.message);
+  }
+}
+
+/** Branded HTML email shell. */
+function emailHtml(bodyHtml, footerHtml) {
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{margin:0;padding:0;background:#f0ede8;font-family:Georgia,serif;color:#111}
+.wrap{max-width:600px;margin:0 auto;background:#fff;border:1px solid #111}
+.hd{background:#000;color:#fff;padding:22px 28px 18px}
+.hd-eye{font:700 10px/1 Arial,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#888;margin-bottom:8px}
+.hd-name{font:700 30px/1 Arial,sans-serif;text-transform:uppercase;letter-spacing:-.02em}
+.hd-sub{font:400 11px/1 Arial,sans-serif;color:#777;margin-top:8px;letter-spacing:.12em;text-transform:uppercase}
+.bd{padding:28px 32px}
+.bd h2{font:700 18px/1.1 Arial,sans-serif;text-transform:uppercase;letter-spacing:.08em;border-bottom:2px solid #000;padding-bottom:10px;margin:0 0 18px}
+.bd p{font-size:15px;line-height:1.65;margin:0 0 15px}
+.bd .rule{border:none;border-top:1px solid #ddd;margin:20px 0}
+.ft{background:#111;color:#666;padding:18px 28px;font:400 11px/1.6 Arial,sans-serif}
+.ft a{color:#999}
+.cta-btn{display:inline-block;background:#000;color:#fff;padding:12px 24px;text-decoration:none;font:700 11px/1 Arial,sans-serif;text-transform:uppercase;letter-spacing:.1em;margin:16px 0}
+</style></head>
+<body><div class="wrap">
+<div class="hd">
+  <div class="hd-eye">RSR Crime Division</div>
+  <div class="hd-name">Los Angeles<br>Crime Wire</div>
+  <div class="hd-sub">Independent Crime &amp; Investigative Weekly</div>
+</div>
+<div class="bd">${bodyHtml}</div>
+<div class="ft">${footerHtml}</div>
+</div></body></html>`;
+}
+
+// =============================================================
 // ── Auth routes ──────────────────────────────────────────────
 // =============================================================
 
@@ -210,12 +309,21 @@ app.get("/auth/me", async (req, res) => {
 app.get("/healthz", (_req, res) => {
   const hasAdminCode = !!(process.env.ADMIN_CODE || process.env.ADMIN_PASSWORD);
   const hasSessionSecret = !!process.env.SESSION_SECRET;
+  const c = emailCfg();
+  const emailStatus = !c.apiKey && !c.from ? "not_configured"
+    : c.apiKey && c.from ? "ready"
+    : "partial";
   res.json({
     ok: hasAdminCode && hasSessionSecret,
     service: "RSR Crime Division",
     runtime: "EdgeOne Cloud Function",
     config: {
       auth: hasAdminCode && hasSessionSecret ? "ready" : "missing_secrets",
+      email: emailStatus,
+      emailMissing: [
+        !c.apiKey && "RESEND_API_KEY",
+        !c.from   && "EMAIL_FROM",
+      ].filter(Boolean),
     },
   });
 });
@@ -253,6 +361,33 @@ app.post("/subscriptions", async (req, res) => {
     };
     all.push(record);
     await saveAll("cw-subs", all);
+
+    // Fire-and-forget welcome email — signup never fails if email fails
+    if (emailReady()) {
+      (async () => {
+        try {
+          const { siteUrl } = emailCfg();
+          const tok = await unsubToken(record.email);
+          const unsubUrl = `${siteUrl}/api/unsubscribe?email=${encodeURIComponent(record.email)}&token=${tok}`;
+          const editionLabel = record.editionType === "digital" ? "Digital edition (email)"
+            : record.editionType === "mailed" ? "Mailed copy — print waitlist"
+            : "Digital + mailed waitlist";
+          const html = emailHtml(
+            `<h2>You're on the list.</h2>
+             <p>Thank you${record.name ? `, ${record.name}` : ""} — you're confirmed for <strong>The Thursday Drop</strong>, Los Angeles Crime Wire's free digital edition delivered every Thursday.</p>
+             <p><strong>Edition:</strong> ${editionLabel}</p>
+             <p>We report on active Los Angeles crime, court records, the running Black Dahlia case file, and investigative journalism. Your first issue arrives this Thursday.</p>
+             <hr class="rule">
+             <p style="font-size:13px;color:#555;font-style:italic;">Victim first. Facts second. Theories last.</p>`,
+            `Los Angeles Crime Wire &middot; <a href="${siteUrl}">${siteUrl}</a><br>
+             <a href="${unsubUrl}">Unsubscribe</a> &middot; You consented on ${record.consentDate?.split("T")[0] ?? "signup"}`
+          );
+          const result = await sendEmail({ to: record.email, subject: "You're confirmed — The Thursday Drop", html });
+          await logEmail({ type: "welcome", to: record.email, subject: "You're confirmed — The Thursday Drop", ok: result.ok, error: result.error ?? null, timestamp: now() });
+        } catch (e) { console.error("welcome email failed:", e.message); }
+      })();
+    }
+
     // Return minimal confirmation — do not echo email back in body
     return res.status(201).json({ id, createdAt: record.createdAt });
   } catch (e) {
@@ -307,6 +442,29 @@ app.post("/tips", async (req, res) => {
     const all = await getAll("cw-tips");
     all.unshift(record);
     await saveAll("cw-tips", all);
+
+    // Fire-and-forget newsroom notification
+    if (emailReady() && emailCfg().newsroom) {
+      (async () => {
+        try {
+          const { newsroom, siteUrl } = emailCfg();
+          const html = emailHtml(
+            `<h2>New Tip Received</h2>
+             <p><strong>From:</strong> ${record.name ?? "Anonymous"}</p>
+             ${record.contactEmail ? `<p><strong>Contact:</strong> ${record.contactEmail}</p>` : ""}
+             ${record.source ? `<p><strong>Source note:</strong> ${record.source}</p>` : ""}
+             <hr class="rule">
+             <p style="white-space:pre-wrap">${record.message}</p>
+             <hr class="rule">
+             <p><a href="${siteUrl}/admin">Review in Admin →</a></p>`,
+            `RSR Crime Division — Admin Notification`
+          );
+          const result = await sendEmail({ to: newsroom, subject: `[Crime Wire] New tip — ${record.name ?? "Anonymous"}`, html });
+          await logEmail({ type: "notification", category: "tip", to: newsroom, ok: result.ok, error: result.error ?? null, timestamp: now() });
+        } catch (e) { console.error("tip notification failed:", e.message); }
+      })();
+    }
+
     return res.status(201).json({ id, createdAt: record.createdAt });
   } catch (e) {
     console.error("POST /tips:", e);
@@ -495,6 +653,29 @@ app.post("/press-club", async (req, res) => {
     const all = await getAll("cw-pressclub");
     all.push(record);
     await saveAll("cw-pressclub", all);
+
+    // Fire-and-forget newsroom notification
+    if (emailReady() && emailCfg().newsroom) {
+      (async () => {
+        try {
+          const { newsroom, siteUrl } = emailCfg();
+          const html = emailHtml(
+            `<h2>New Press Club Application</h2>
+             <p><strong>Name:</strong> ${record.name ?? "—"}</p>
+             <p><strong>Email:</strong> ${record.email}</p>
+             <p><strong>Tier:</strong> ${record.tier}</p>
+             ${record.city ? `<p><strong>City:</strong> ${record.city}${record.zip ? `, ${record.zip}` : ""}</p>` : ""}
+             ${record.message ? `<hr class="rule"><p style="white-space:pre-wrap">${record.message}</p>` : ""}
+             <hr class="rule">
+             <p><a href="${siteUrl}/admin">Review in Admin →</a></p>`,
+            `RSR Crime Division — Admin Notification`
+          );
+          const result = await sendEmail({ to: newsroom, subject: `[Crime Wire] Press Club — ${record.name ?? record.email} (${record.tier})`, html });
+          await logEmail({ type: "notification", category: "press-club", to: newsroom, ok: result.ok, error: result.error ?? null, timestamp: now() });
+        } catch (e) { console.error("press-club notification failed:", e.message); }
+      })();
+    }
+
     return res.status(201).json({ id, email, tier, createdAt: record.createdAt });
   } catch (e) {
     return res.status(500).json({ error: "Storage error" });
@@ -1229,6 +1410,9 @@ const ALLOWED_KEYS = new Set([
   "newsroom_status", "publication_name", "editor_name",
   "contact_email", "mailing_address", "social_twitter",
   "social_instagram", "edition_url", "subscription_note",
+  // Added for AdminSettings editorial fields:
+  "thursday_release_info", "standard_byline", "tagline",
+  "edition_schedule", "city_desk_notice", "records_desk_notice", "homepage_notice",
 ]);
 
 app.get("/settings", requireAdmin, async (_req, res) => {
@@ -1256,6 +1440,168 @@ app.put("/settings", requireAdmin, async (req, res) => {
     }
     await store.setJSON("all", settings);
     return res.json({ key, value: settings[key] ?? null });
+  } catch (e) {
+    return res.status(500).json({ error: "Storage error" });
+  }
+});
+
+// =============================================================
+// ── Unsubscribe (public, token-gated) ────────────────────────
+// =============================================================
+
+app.get("/unsubscribe", async (req, res) => {
+  const { email, token } = req.query;
+  if (!email || !token) {
+    return res.status(400).send("<h2>Invalid unsubscribe link.</h2>");
+  }
+  const expected = await unsubToken(String(email)).catch(() => null);
+  if (!expected || token !== expected) {
+    return res.status(400).send("<h2>Invalid or expired unsubscribe link.</h2>");
+  }
+  try {
+    const all = await getAll("cw-subs");
+    const idx = all.findIndex((r) => r.email.toLowerCase().trim() === String(email).toLowerCase().trim());
+    if (idx === -1) {
+      return res.send(`<!DOCTYPE html><html><body style="font-family:Georgia;max-width:480px;margin:60px auto;padding:20px;"><h2 style="font-family:Arial;text-transform:uppercase;">Already removed.</h2><p>That address is not on our list.</p></body></html>`);
+    }
+    all[idx].status = "unsubscribed";
+    all[idx].unsubscribedAt = now();
+    await saveAll("cw-subs", all);
+    return res.send(`<!DOCTYPE html><html><head><title>Unsubscribed</title></head><body style="font-family:Georgia;max-width:480px;margin:60px auto;padding:20px;border-top:4px solid #000;"><p style="font:700 10px/1 Arial;letter-spacing:.2em;text-transform:uppercase;color:#888;margin-bottom:16px;">RSR Crime Division</p><h2 style="font-family:Arial;text-transform:uppercase;margin-bottom:12px;">You've been removed.</h2><p>You've been unsubscribed from The Thursday Drop and will receive no further editions.</p><p style="color:#888;font-size:13px;margin-top:24px;">— Los Angeles Crime Wire</p></body></html>`);
+  } catch (e) {
+    return res.status(500).send("<h2>An error occurred. Please try again.</h2>");
+  }
+});
+
+// =============================================================
+// ── Admin — Email dispatch ────────────────────────────────────
+// =============================================================
+
+/** GET /admin/email/status — config check + recent delivery log */
+app.get("/admin/email/status", requireAdmin, async (_req, res) => {
+  const c = emailCfg();
+  const missing = [
+    !c.apiKey   && "RESEND_API_KEY",
+    !c.from     && "EMAIL_FROM",
+  ].filter(Boolean);
+  const optional = [
+    !c.newsroom && "EMAIL_NEWSROOM",
+    !c.replyTo  && "EMAIL_REPLY_TO",
+    !c.siteUrl  && "SITE_URL",
+  ].filter(Boolean);
+
+  let recentLog = [];
+  try {
+    const store = getStore("cw-email-log");
+    recentLog = (await store.get("log", { type: "json" })) ?? [];
+  } catch { /* non-fatal */ }
+
+  return res.json({
+    configured: missing.length === 0,
+    missing,
+    optional,
+    siteUrl: c.siteUrl,
+    hasNewsroom: !!c.newsroom,
+    recentLog: recentLog.slice(0, 30),
+  });
+});
+
+/** POST /admin/email/test — send a test message to one address */
+app.post("/admin/email/test", requireAdmin, async (req, res) => {
+  const { to } = req.body ?? {};
+  if (!to) return res.status(400).json({ error: "to address required" });
+  if (!emailReady()) return res.status(503).json({ error: "Email not configured — set RESEND_API_KEY and EMAIL_FROM" });
+  const subject = `[Crime Wire] Test email — ${new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" })}`;
+  const html = emailHtml(
+    `<h2>Test Delivery</h2>
+     <p>This is a test email from the Crime Wire admin panel. Delivery is confirmed.</p>
+     <p style="font-size:13px;color:#555;">Sent: ${now()} UTC</p>`,
+    `RSR Crime Division — Los Angeles Crime Wire`
+  );
+  const result = await sendEmail({ to, subject, html });
+  await logEmail({ type: "test", to, subject, ok: result.ok, error: result.error ?? null, timestamp: now() });
+  if (!result.ok) return res.status(502).json({ error: result.error || "Delivery failed" });
+  return res.json({ ok: true, timestamp: now() });
+});
+
+/** POST /admin/email/send-issue — dispatch Thursday Drop to active subscribers */
+app.post("/admin/email/send-issue", requireAdmin, async (req, res) => {
+  const { subject, preview, issueUrl, confirmSend } = req.body ?? {};
+  if (!subject) return res.status(400).json({ error: "subject is required" });
+  if (!confirmSend) return res.status(400).json({ error: "confirmSend must be true — this protects against accidental duplicate sends" });
+  if (!emailReady()) return res.status(503).json({ error: "Email not configured — set RESEND_API_KEY and EMAIL_FROM" });
+
+  // Duplicate-send guard: same subject sent within 6 h → reject
+  try {
+    const logStore = getStore("cw-email-log");
+    const prevLog = (await logStore.get("log", { type: "json" })) ?? [];
+    const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+    const recent = prevLog.find((e) => e.type === "campaign" && e.subject === subject && e.timestamp > sixHoursAgo);
+    if (recent) {
+      return res.status(409).json({
+        error: `This subject line was already dispatched at ${recent.timestamp}. Change the subject or wait 6 hours to re-send.`,
+        duplicate: true,
+      });
+    }
+  } catch { /* non-fatal */ }
+
+  const activeSubs = (await getAll("cw-subs")).filter((s) => s.status === "active");
+  if (activeSubs.length === 0) return res.status(400).json({ error: "No active subscribers found" });
+
+  const { siteUrl } = emailCfg();
+  let sent = 0, failed = 0;
+  const errors = [];
+
+  for (const sub of activeSubs) {
+    try {
+      const tok = await unsubToken(sub.email);
+      const unsubUrl = `${siteUrl}/api/unsubscribe?email=${encodeURIComponent(sub.email)}&token=${tok}`;
+      const ctaBlock = issueUrl
+        ? `<p style="text-align:center;margin:28px 0;"><a href="${issueUrl}" class="cta-btn">Read This Week's Edition →</a></p>`
+        : "";
+      const html = emailHtml(
+        `<h2>${subject}</h2>
+         ${preview ? `<p style="font-size:16px;font-style:italic;color:#333;">${preview}</p>` : ""}
+         ${ctaBlock}
+         <p>This week's Los Angeles Crime Wire is now available. Thank you for reading.</p>
+         <hr class="rule">
+         <p style="font-size:13px;color:#555;font-style:italic;">Victim first. Facts second. Theories last.</p>`,
+        `Los Angeles Crime Wire &middot; <a href="${siteUrl}">${siteUrl}</a><br>
+         <a href="${unsubUrl}">Unsubscribe</a>`
+      );
+      const result = await sendEmail({ to: sub.email, subject, html });
+      if (result.ok) { sent++; } else { failed++; errors.push({ email: sub.email, error: result.error }); }
+      // Brief pause to respect Resend rate limits
+      await new Promise((r) => setTimeout(r, 60));
+    } catch (e) {
+      failed++;
+      errors.push({ email: sub.email, error: e.message });
+    }
+  }
+
+  await logEmail({
+    type: "campaign",
+    subject,
+    preview: preview ?? null,
+    issueUrl: issueUrl ?? null,
+    total: activeSubs.length,
+    sent,
+    failed,
+    errors: errors.slice(0, 10),
+    timestamp: now(),
+    sentBy: "admin",
+  });
+
+  return res.json({ ok: true, sent, failed, total: activeSubs.length, timestamp: now() });
+});
+
+/** GET /admin/email/log — full delivery log */
+app.get("/admin/email/log", requireAdmin, async (req, res) => {
+  try {
+    const store = getStore("cw-email-log");
+    const log = (await store.get("log", { type: "json" })) ?? [];
+    const limit = Math.min(parseInt(req.query.limit ?? "50", 10), 200);
+    return res.json(log.slice(0, limit));
   } catch (e) {
     return res.status(500).json({ error: "Storage error" });
   }
