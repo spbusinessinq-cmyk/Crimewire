@@ -11,11 +11,13 @@ import AdminMailingList from "./admin/AdminMailingList";
 import AdminAdvertisers from "./admin/AdminAdvertisers";
 import AdminCorrections from "./admin/AdminCorrections";
 import AdminSettings from "./admin/AdminSettings";
+import AdminFrontPage from "./admin/AdminFrontPage";
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
 type TabId =
   | "dashboard"
+  | "front-page"
   | "reports"
   | "case-files"
   | "uploads"
@@ -28,6 +30,7 @@ type TabId =
 
 const TABS: { id: TabId; label: string; short: string }[] = [
   { id: "dashboard",    label: "Dashboard",         short: "Dash" },
+  { id: "front-page",   label: "Front Page",        short: "Front" },
   { id: "reports",      label: "City Reports",      short: "Reports" },
   { id: "case-files",   label: "Case Files",        short: "Cases" },
   { id: "uploads",      label: "Records & Uploads", short: "Uploads" },
@@ -288,6 +291,7 @@ export default function Admin() {
 
         <div>
           {activeTab === "dashboard"    && <AdminDashboard onNavigate={navigate} />}
+          {activeTab === "front-page"   && <AdminFrontPage />}
           {activeTab === "reports"      && <AdminReports />}
           {activeTab === "case-files"   && <AdminCaseFiles />}
           {activeTab === "uploads"      && <AdminUploads />}

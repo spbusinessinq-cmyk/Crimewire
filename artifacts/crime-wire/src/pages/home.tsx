@@ -1,17 +1,95 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { QRCodeSVG } from "qrcode.react";
 
-const EDITION_URL = import.meta.env.VITE_EDITION_URL || "";
+// ── Issue shape from /api/issues/latest ──────────────────────
+interface LiveIssue {
+  id: number;
+  volume: number;
+  number: string;
+  title: string;
+  headline: string | null;
+  deck: string | null;
+  description: string | null;
+  caseLabel: string | null;
+  pdfUrl: string | null;
+  coverImageUrl: string | null;
+  pageCount: number;
+  status: string;
+  publishDate: string | null;
+  dropDate: string | null;
+  countdownEnabled: boolean;
+  publicStatus: string | null;
+  readCtaLabel: string | null;
+  readCtaUrl: string | null;
+  downloadCtaLabel: string | null;
+  downloadCtaUrl: string | null;
+  joinCtaLabel: string | null;
+}
 
-// ── Icons ────────────────────────────────────────────────────
-const CheckIcon = () => (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter">
-    <polyline points="20 6 9 17 4 12"></polyline>
-  </svg>
-);
+// ── Fallback values (Vol. I, No. 2 edition) ──────────────────
+const FALLBACK_HEADLINE  = "The Story Got Smaller. The Clues Got Better.";
+const FALLBACK_DECK      = "As the 1947 headline count collapsed, what remained in the record grew more specific: names, addresses, drivers, bartenders, hotels, and at least four leads the investigation eliminated on the record.";
+const FALLBACK_CASE      = "BDH-002 · The Black Dahlia Investigation";
+const FALLBACK_COVER     = "/images/biltmore.jpg";
+const FALLBACK_PAGES     = 12;
+const FALLBACK_READ_CTA  = "Read Latest Issue";
+const FALLBACK_DL_CTA    = "Download PDF";
+const FALLBACK_JOIN_CTA  = "Join Thursday Drop";
+
+// ── Countdown helpers ─────────────────────────────────────────
+/** Returns the UTC epoch ms for next Thursday noon PT (or the issue's dropDate). */
+function nextDropMs(dropDateOverride?: string | null): number {
+  if (dropDateOverride) {
+    const d = new Date(dropDateOverride);
+    if (!isNaN(d.getTime()) && d.getTime() > Date.now()) return d.getTime();
+  }
+  const now = Date.now();
+  for (let off = 0; off <= 7; off++) {
+    const candidate = new Date(now + off * 86_400_000);
+    const wd = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles", weekday: "short",
+    }).format(candidate);
+    if (wd !== "Thu") continue;
+    // Determine UTC offset for that day
+    const tzPart = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles", timeZoneName: "shortOffset",
+    }).formatToParts(candidate).find(p => p.type === "timeZoneName")?.value ?? "GMT-7";
+    const m = tzPart.match(/GMT([+-])(\d+)/);
+    const offsetH = m ? (m[1] === "+" ? parseInt(m[2]) : -parseInt(m[2])) : -7;
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Los_Angeles",
+      year: "numeric", month: "2-digit", day: "2-digit",
+    }).formatToParts(candidate);
+    const y  = parseInt(parts.find(p => p.type === "year")!.value);
+    const mo = parseInt(parts.find(p => p.type === "month")!.value) - 1;
+    const dy = parseInt(parts.find(p => p.type === "day")!.value);
+    const noonUtc = Date.UTC(y, mo, dy, 12 - offsetH, 0, 0, 0);
+    if (noonUtc > now) return noonUtc;
+  }
+  return now + 7 * 86_400_000;
+}
+
+function pad(n: number) { return String(n).padStart(2, "0"); }
+
+function fmtCountdown(ms: number): string {
+  if (ms <= 0) return "00d · 00h · 00m · 00s";
+  const s   = Math.floor(ms / 1000);
+  const d   = Math.floor(s / 86_400);
+  const h   = Math.floor((s % 86_400) / 3_600);
+  const min = Math.floor((s % 3_600) / 60);
+  const sec = s % 60;
+  return `${pad(d)}d · ${pad(h)}h · ${pad(min)}m · ${pad(sec)}s`;
+}
+
+function toRoman(n: number): string {
+  const map: [number, string][] = [[10,"X"],[9,"IX"],[5,"V"],[4,"IV"],[1,"I"]];
+  let r = "";
+  for (const [v, sym] of map) { while (n >= v) { r += sym; n -= v; } }
+  return r || String(n);
+}
 
 // ── Schemas ──────────────────────────────────────────────────
 const subscriptionSchema = z.object({
@@ -34,35 +112,110 @@ const tipSchema = z.object({
 type SubscriptionForm = z.infer<typeof subscriptionSchema>;
 type TipForm = z.infer<typeof tipSchema>;
 
+// ── Icons ─────────────────────────────────────────────────────
+const CheckIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="square" strokeLinejoin="miter">
+    <polyline points="20 6 9 17 4 12" />
+  </svg>
+);
+
+// ─────────────────────────────────────────────────────────────
 export default function Home() {
-  const [subSuccess, setSubSuccess] = useState(false);
+  // ── Form state ───────────────────────────────────────────────
+  const [subSuccess,   setSubSuccess]   = useState(false);
   const [subDuplicate, setSubDuplicate] = useState(false);
-  const [tipSuccess, setTipSuccess] = useState(false);
-  const [subLoading, setSubLoading] = useState(false);
-  const [tipLoading, setTipLoading] = useState(false);
-  const [imageError, setImageError] = useState(false);
+  const [tipSuccess,   setTipSuccess]   = useState(false);
+  const [subLoading,   setSubLoading]   = useState(false);
+  const [tipLoading,   setTipLoading]   = useState(false);
+  const [imageError,   setImageError]   = useState(false);
 
-  const subForm = useForm<SubscriptionForm>({
-    resolver: zodResolver(subscriptionSchema),
-    defaultValues: {
-      email: "", name: "", zip: "", editionType: "digital",
-      // @ts-ignore
-      consent: false
+  // ── Live issue ───────────────────────────────────────────────
+  const [issue, setIssue] = useState<LiveIssue | null>(null);
+
+  // ── Countdown ────────────────────────────────────────────────
+  const [remaining, setRemaining]       = useState<number>(0);
+  const dropTarget  = useRef<number>(0);
+
+  // ── Fetch latest published issue ─────────────────────────────
+  useEffect(() => {
+    fetch("/api/issues/latest", { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then((data: LiveIssue | null) => {
+        setIssue(data);
+        dropTarget.current = nextDropMs(data?.dropDate);
+        setRemaining(Math.max(0, dropTarget.current - Date.now()));
+      })
+      .catch(() => {
+        dropTarget.current = nextDropMs(null);
+        setRemaining(Math.max(0, dropTarget.current - Date.now()));
+      });
+  }, []);
+
+  // ── Tick every second ────────────────────────────────────────
+  useEffect(() => {
+    if (dropTarget.current === 0) {
+      dropTarget.current = nextDropMs(null);
     }
-  });
+    const id = setInterval(() => {
+      const rem = Math.max(0, dropTarget.current - Date.now());
+      setRemaining(rem);
+      // When countdown expires, recalculate for next week
+      if (rem === 0) {
+        dropTarget.current = nextDropMs(null);
+      }
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
 
-  const tipForm = useForm<TipForm>({
-    resolver: zodResolver(tipSchema),
-    defaultValues: { nameOrAlias: "", contactEmail: "", message: "", provenance: "" }
-  });
+  // ── Derived content (live issue or fallbacks) ─────────────────
+  const EDITION_URL      = import.meta.env.VITE_EDITION_URL || "";
+  const issuePdf         = issue?.pdfUrl ?? EDITION_URL;
+  const headline         = issue?.headline   ?? FALLBACK_HEADLINE;
+  const deck             = issue?.deck ?? issue?.description ?? FALLBACK_DECK;
+  const caseLabel        = issue?.caseLabel  ?? FALLBACK_CASE;
+  const coverImg         = issue?.coverImageUrl ?? FALLBACK_COVER;
+  const pageCount        = issue?.pageCount  ?? FALLBACK_PAGES;
+  const readCtaLabel     = issue?.readCtaLabel ?? FALLBACK_READ_CTA;
+  const readCtaUrl       = issue?.readCtaUrl || issuePdf;
+  const dlCtaLabel       = issue?.downloadCtaLabel ?? FALLBACK_DL_CTA;
+  const dlCtaUrl         = issue?.downloadCtaUrl   || issuePdf;
+  const joinCtaLabel     = issue?.joinCtaLabel ?? FALLBACK_JOIN_CTA;
+  const countdownOn      = issue?.countdownEnabled !== false;
+  const pubStatus        = issue?.publicStatus ?? null;
+
+  // Edition dateline
+  const volStr  = issue ? `Volume ${toRoman(issue.volume)}, Number ${issue.number.replace(/^No\.\s*/i, "")}` : "Volume I, Number 2";
+  const dateStr = issue?.publishDate
+    ? new Date(issue.publishDate + (issue.publishDate.length === 10 ? "T12:00:00" : "")).toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })
+    : "Thursday, August 14, 2026";
+  const shortDateStr = issue?.publishDate
+    ? new Date(issue.publishDate + (issue.publishDate.length === 10 ? "T12:00:00" : "")).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
+    : "Thursday, August 14, 2026";
+  const pagesStr = `${pageCount} Pages`;
+
+  // Top dateline strip values
+  const stripVol = issue ? `Vol. ${toRoman(issue.volume)}, No. ${issue.number.replace(/^No\.\s*/i, "")}` : "Vol. I, No. 2";
+
+  // Countdown bar state
+  const expired = remaining === 0;
+  const isLive  = expired && !!issue && issue.status === "published" &&
+    !!issue.publishDate &&
+    Date.now() - new Date(issue.publishDate).getTime() < 7 * 86_400_000;
+
+  const pubInput = "w-full border-2 border-black p-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black bg-white";
+
+  const scrollToSection = (id: string) => {
+    const el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth" });
+  };
 
   const onSubSubmit = async (data: SubscriptionForm) => {
     setSubDuplicate(false);
     setSubLoading(true);
     try {
-      const res = await fetch('/api/subscriptions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: data.email, name: data.name || null, zip: data.zip || null,
           editionType: data.editionType, consent: data.consent,
@@ -77,9 +230,9 @@ export default function Home() {
   const onTipSubmit = async (data: TipForm) => {
     setTipLoading(true);
     try {
-      const res = await fetch('/api/tips', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/tips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: data.nameOrAlias || null, contactEmail: data.contactEmail || null,
           message: data.message, source: data.provenance || null,
@@ -90,36 +243,55 @@ export default function Home() {
     finally { setTipLoading(false); }
   };
 
-  const scrollToSection = (id: string) => {
-    const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: "smooth" });
-  };
+  const subForm = useForm<SubscriptionForm>({
+    resolver: zodResolver(subscriptionSchema),
+    defaultValues: { email: "", name: "", zip: "", editionType: "digital", consent: false as unknown as true },
+  });
 
-  // ── Shared input style for public forms ──────────────────
-  const pubInput = "w-full border-2 border-black p-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-black bg-white";
+  const tipForm = useForm<TipForm>({
+    resolver: zodResolver(tipSchema),
+    defaultValues: { nameOrAlias: "", contactEmail: "", message: "", provenance: "" },
+  });
 
   return (
     <div className="min-h-[100dvh] bg-white text-black font-sans w-full overflow-x-hidden selection:bg-black selection:text-white">
 
-      {/* ── Dateline strip ─────────────────────────────────── */}
+      {/* ── Dateline strip ───────────────────────────────────── */}
       <div className="w-full border-b border-black py-1.5 px-4 bg-white">
         <div className="max-w-[1200px] mx-auto flex items-center justify-between gap-2">
           <span className="text-[9px] font-bold uppercase tracking-[0.22em]">RSR Crime Division · Los Angeles Bureau</span>
-          <span className="text-[9px] font-bold uppercase tracking-[0.22em] hidden md:block">Vol. I, No. 2 · 12 Pages · Free Digital Edition</span>
-          <span className="text-[9px] font-bold uppercase tracking-[0.22em]">Thursday, August 13, 2026</span>
-        </div>
-      </div>
-
-      {/* ── Newsroom Status Strip ───────────────────────────── */}
-      <div className="w-full bg-black text-white py-2 px-4">
-        <div className="max-w-[1200px] mx-auto text-center">
-          <span className="text-[10px] font-bold uppercase tracking-[0.18em]">
-            Archive Operation Active&nbsp;&nbsp;—&nbsp;&nbsp;Next Target: Los Angeles Examiner&nbsp;&nbsp;—&nbsp;&nbsp;Mission: Recover the Dispositions.
+          <span className="text-[9px] font-bold uppercase tracking-[0.22em] hidden md:block">
+            {stripVol} · {pagesStr} · Free Digital Edition
           </span>
+          <span className="text-[9px] font-bold uppercase tracking-[0.22em]">{shortDateStr}</span>
         </div>
       </div>
 
-      {/* ── Masthead ────────────────────────────────────────── */}
+      {/* ── Thursday Drop countdown bar ──────────────────────── */}
+      {countdownOn && (
+        <div className="w-full bg-black text-white px-4 py-1.5">
+          <div className="max-w-[1200px] mx-auto flex items-center justify-between gap-3">
+            <span className="text-[9px] font-bold uppercase tracking-[0.18em] hidden sm:block whitespace-nowrap">
+              {expired
+                ? isLive ? "This Week's Crime Wire Is Live" : "Drop Window Open"
+                : "Next Crime Wire Drop"}
+            </span>
+            <span className="text-[10px] font-mono font-bold tracking-widest tabular-nums text-center flex-1 sm:flex-none">
+              {expired
+                ? isLive
+                  ? <span className="text-[9px] font-bold uppercase tracking-[0.18em]">Read the Drop →</span>
+                  : <span className="text-[9px] font-bold uppercase tracking-[0.18em]">Check Back Shortly</span>
+                : fmtCountdown(remaining)
+              }
+            </span>
+            <span className="text-[9px] font-bold uppercase tracking-[0.18em] whitespace-nowrap">
+              Thursday · {pagesStr}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Masthead ─────────────────────────────────────────── */}
       <header className="border-b-2 border-black bg-white">
         <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 py-4 text-center">
           <div className="flex items-center justify-center gap-6 lg:gap-10">
@@ -129,7 +301,6 @@ export default function Home() {
                 Independent<br/>Crime &amp;<br/>Investigative<br/>Weekly
               </p>
             </div>
-
             {/* Logotype */}
             <div>
               <div className="text-[10px] sm:text-xs font-bold uppercase tracking-[0.55em] mb-0.5 text-gray-600">Los Angeles</div>
@@ -137,7 +308,6 @@ export default function Home() {
                 Crime Wire
               </div>
             </div>
-
             {/* Right ear */}
             <div className="hidden lg:block text-right">
               <p className="text-[9px] font-bold uppercase tracking-[0.2em] leading-relaxed text-gray-500">
@@ -148,79 +318,97 @@ export default function Home() {
 
           {/* Dateline rule */}
           <div className="mt-2 border-t border-b border-black py-1.5 text-[9px] font-bold uppercase tracking-[0.15em]">
-            Thursday, August 13, 2026&nbsp; · &nbsp;Volume I, Number 2&nbsp; · &nbsp;12 Pages&nbsp; · &nbsp;Black Dahlia Case File · BDH-002 Active
+            {dateStr}&nbsp;·&nbsp;{volStr}&nbsp;·&nbsp;{pagesStr}
+            {caseLabel ? `\u00a0·\u00a0${caseLabel}` : ""}
           </div>
         </div>
       </header>
 
-      {/* ── Main content ─────────────────────────────────────── */}
+      {/* ── Main content ────────────────────────────────────────── */}
       <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
 
         {/* ── Two-column newspaper grid ────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-0">
 
-          {/* ── Lead story (8 cols) ────────────────────────── */}
+          {/* ── Lead story (8 cols) ──────────────────────────── */}
           <main className="lg:col-span-8 lg:border-r-2 lg:border-black lg:pr-8 py-7">
 
             {/* Slug / section labels */}
             <div className="flex items-center gap-2 mb-3 flex-wrap">
               <span className="bg-black text-white px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest">The Lead</span>
-              <span className="text-[9px] font-bold uppercase tracking-widest border border-black px-2 py-0.5">BDH-002 · The Black Dahlia Investigation</span>
+              {caseLabel && (
+                <span className="text-[9px] font-bold uppercase tracking-widest border border-black px-2 py-0.5">{caseLabel}</span>
+              )}
             </div>
 
-            {/* Headline */}
-            <h2 className="text-[36px] sm:text-[48px] md:text-[56px] font-serif font-bold leading-[1.0] mb-3 uppercase">
-              The Story Got Smaller.<br/>The Clues Got Better.
+            {/* Headline — commanding but not swallowing */}
+            <h2 className="text-[28px] sm:text-[38px] md:text-[46px] font-serif font-bold leading-[1.05] mb-3 uppercase whitespace-pre-line">
+              {headline}
             </h2>
 
             {/* Deck */}
-            <p className="font-serif text-base sm:text-lg italic text-gray-800 mb-5 leading-snug border-l-[3px] border-black pl-4">
-              As the 1947 headline count collapsed, what remained in the record grew more specific: names, addresses, drivers, bartenders, hotels, and at least four leads the investigation eliminated on the record.
-            </p>
+            {deck && (
+              <p className="font-serif text-base sm:text-lg italic text-gray-800 mb-4 leading-snug border-l-[3px] border-black pl-4">
+                {deck}
+              </p>
+            )}
+
+            {/* Optional public status badge */}
+            {pubStatus && (
+              <div className="mb-4">
+                <span className="text-[9px] font-bold uppercase tracking-widest bg-black text-white px-2 py-1">
+                  {pubStatus}
+                </span>
+              </div>
+            )}
 
             {/* ── CTAs — above fold ──────────────────────────── */}
             <div className="flex flex-col sm:flex-row gap-3 mb-7 pb-7 border-b-2 border-black">
-              {EDITION_URL ? (
-                <a href={EDITION_URL} target="_blank" rel="noopener noreferrer"
+              {readCtaUrl ? (
+                <a href={readCtaUrl} target="_blank" rel="noopener noreferrer"
                   className="flex-1 bg-black text-white py-3 px-5 text-[11px] font-bold uppercase tracking-widest hover:bg-gray-900 transition-colors text-center border-2 border-black">
-                  Read Latest Issue →
+                  {readCtaLabel} →
                 </a>
               ) : (
                 <button disabled className="flex-1 py-3 px-5 text-[11px] font-bold uppercase tracking-widest border-2 border-black opacity-40 cursor-not-allowed">
-                  Read Latest Issue
+                  {readCtaLabel}
                 </button>
               )}
-              {EDITION_URL ? (
-                <a href={EDITION_URL} download target="_blank" rel="noopener noreferrer"
+              {dlCtaUrl ? (
+                <a href={dlCtaUrl} download target="_blank" rel="noopener noreferrer"
                   className="flex-1 py-3 px-5 text-[11px] font-bold uppercase tracking-widest border-2 border-black hover:bg-black hover:text-white transition-colors text-center">
-                  Download PDF →
+                  {dlCtaLabel} →
                 </a>
               ) : (
                 <button disabled className="flex-1 py-3 px-5 text-[11px] font-bold uppercase tracking-widest border-2 border-black opacity-40 cursor-not-allowed">
-                  Download PDF
+                  {dlCtaLabel}
                 </button>
               )}
               <button onClick={() => scrollToSection("subscribe")}
                 className="flex-1 py-3 px-5 text-[11px] font-bold uppercase tracking-widest border-2 border-black hover:bg-black hover:text-white transition-colors text-center">
-                Join Thursday Drop
+                {joinCtaLabel}
               </button>
             </div>
 
-            {/* ── Archival image ─────────────────────────────── */}
+            {/* ── Cover / archival image ─────────────────────── */}
             <figure className="mb-7 border border-black p-0.5">
-              {!imageError && (
+              {!imageError ? (
                 <div className="w-full aspect-square overflow-hidden relative bg-gray-900">
                   <img
-                    src="/images/biltmore.jpg"
-                    alt="Biltmore Hotel, South Grand Avenue, Los Angeles, 1947"
+                    src={coverImg}
+                    alt={coverImg === FALLBACK_COVER ? "Biltmore Hotel, South Grand Avenue, Los Angeles, 1947" : "Cover image"}
                     className="w-full h-full object-cover object-center"
                     onError={() => setImageError(true)}
                   />
                   <div className="absolute inset-0 bg-black/10 mix-blend-multiply pointer-events-none" />
                 </div>
-              )}
+              ) : null}
               <figcaption className={`px-2 py-1.5 text-[9px] font-bold uppercase tracking-widest flex justify-between items-center${!imageError ? " border-t border-black" : ""}`}>
-                <span>Biltmore Hotel · South Grand Avenue · Los Angeles, 1947</span>
+                <span>
+                  {coverImg === FALLBACK_COVER
+                    ? "Biltmore Hotel · South Grand Avenue · Los Angeles, 1947"
+                    : "Cover · Los Angeles Crime Wire"}
+                </span>
                 <span className={imageError ? "text-gray-400 font-mono font-normal normal-case tracking-normal" : "text-gray-500"}>
                   {imageError ? "Archival image — reference pending" : "BDH-002 Archive"}
                 </span>
@@ -258,10 +446,10 @@ export default function Home() {
 
           </main>
 
-          {/* ── Sidebar (4 cols) ───────────────────────────── */}
+          {/* ── Sidebar (4 cols) ──────────────────────────────── */}
           <aside className="lg:col-span-4 lg:pl-8 py-7 flex flex-col gap-6 border-t-2 border-black lg:border-t-0">
 
-            {/* Thursday Drop signup form ── ALL LOGIC PRESERVED */}
+            {/* Thursday Drop signup — ALL LOGIC PRESERVED */}
             <div id="subscribe" className="border-2 border-black p-5">
               <div className="border-b-2 border-black pb-3 mb-4">
                 <h3 className="text-base font-serif font-bold uppercase tracking-wide mb-1">The Thursday Drop</h3>
@@ -289,7 +477,6 @@ export default function Home() {
                       This address is already on the list.
                     </div>
                   )}
-
                   <div>
                     <label className="block text-[10px] font-bold uppercase tracking-widest mb-1">Email Address *</label>
                     <input type="email" {...subForm.register("email")} className={pubInput} />
@@ -297,12 +484,10 @@ export default function Home() {
                       <p className="text-[10px] text-red-600 font-bold mt-1 uppercase">{subForm.formState.errors.email.message}</p>
                     )}
                   </div>
-
                   <div>
                     <label className="block text-[10px] font-bold uppercase tracking-widest mb-1">Name / Alias</label>
                     <input type="text" {...subForm.register("name")} className={pubInput} />
                   </div>
-
                   <div>
                     <label className="block text-[10px] font-bold uppercase tracking-widest mb-1">LA ZIP Code (Optional)</label>
                     <input type="text" {...subForm.register("zip")} placeholder="90014"
@@ -311,26 +496,24 @@ export default function Home() {
                       <p className="text-[10px] text-red-600 font-bold mt-1 uppercase">{subForm.formState.errors.zip.message}</p>
                     )}
                   </div>
-
                   <div className="pt-1">
                     <label className="block text-[10px] font-bold uppercase tracking-widest mb-2">Edition Preference</label>
                     <div className="space-y-2">
                       {[
                         { id: "digital", label: "Digital Edition (Free)" },
-                        { id: "mailed", label: "Mailed Copy — Waitlist Only" },
-                        { id: "both", label: "Both (Digital + Waitlist)" }
-                      ].map((opt) => (
+                        { id: "mailed",  label: "Mailed Copy — Waitlist Only" },
+                        { id: "both",    label: "Both (Digital + Waitlist)" },
+                      ].map(opt => (
                         <label key={opt.id} className="flex items-center gap-2 cursor-pointer group">
                           <div className="relative flex items-center justify-center">
                             <input type="radio" value={opt.id} {...subForm.register("editionType")} className="peer sr-only" />
-                            <div className="w-4 h-4 border-2 border-black rounded-none peer-checked:bg-black peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-black transition-all"></div>
+                            <div className="w-4 h-4 border-2 border-black rounded-none peer-checked:bg-black peer-focus-visible:ring-2 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-black transition-all" />
                           </div>
                           <span className="text-xs font-serif group-hover:font-bold transition-all">{opt.label}</span>
                         </label>
                       ))}
                     </div>
                   </div>
-
                   <div className="pt-3 border-t border-black">
                     <label className="flex items-start gap-3 cursor-pointer">
                       <div className="relative pt-0.5 flex-shrink-0">
@@ -349,7 +532,6 @@ export default function Home() {
                       <p className="text-[10px] text-red-600 font-bold mt-2 uppercase">{subForm.formState.errors.consent.message}</p>
                     )}
                   </div>
-
                   <button type="submit" disabled={subLoading}
                     className="w-full bg-black text-white py-3 text-[11px] font-bold uppercase tracking-widest hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed">
                     {subLoading ? "Transmitting..." : "Subscribe to Thursday Drop"}
@@ -358,17 +540,17 @@ export default function Home() {
               )}
             </div>
 
-            {/* BDH-002 case status ─── */}
+            {/* BDH-002 case status */}
             <div className="border-t-4 border-b-4 border-black py-5">
               <h3 className="text-[10px] font-bold uppercase tracking-widest mb-3 border-b border-black pb-2">
                 Active Case — BDH-002
               </h3>
               <ul className="space-y-2.5 text-xs font-serif">
                 {[
-                  ["I.", "The Biltmore is the last strong location in the known movement record."],
-                  ["II.", "Working floor: Olive Street exit, movement south, ~10 p.m., January 9. Lead open and unconfirmed."],
+                  ["I.",   "The Biltmore is the last strong location in the known movement record."],
+                  ["II.",  "Working floor: Olive Street exit, movement south, ~10 p.m., January 9. Lead open and unconfirmed."],
                   ["III.", "Biltmore oral-history chain — doorman, waiting cab — noted but not established. No named source on record."],
-                  ["IV.", "January 11 — Sixth and Main — tracked independently."],
+                  ["IV.",  "January 11 — Sixth and Main — tracked independently."],
                 ].map(([n, text]) => (
                   <li key={n} className="flex gap-2">
                     <span className="font-bold uppercase text-[9px] tracking-widest mt-0.5 whitespace-nowrap w-5 shrink-0">{n}</span>
@@ -381,7 +563,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Credo ─── */}
+            {/* Credo */}
             <div className="border border-black p-4 text-center">
               <h4 className="text-[9px] font-bold uppercase tracking-[0.3em] border-b border-black pb-2 mb-3">
                 Newsroom Policy
@@ -391,11 +573,11 @@ export default function Home() {
               </p>
             </div>
 
-            {/* City Desk & Records Desk quick links ─── */}
+            {/* City Desk & Records Desk quick links */}
             <div className="border border-black">
               {[
-                { label: "City Desk", desc: "Los Angeles crime briefs, incident reporting, and open investigations.", href: "/city-desk" },
-                { label: "Records Desk", desc: "FOIA filings, court records, and document archive.", href: "/records-desk" },
+                { label: "City Desk",     desc: "Los Angeles crime briefs, incident reporting, and open investigations.", href: "/city-desk" },
+                { label: "Records Desk",  desc: "FOIA filings, court records, and document archive.",                    href: "/records-desk" },
               ].map((item, i) => (
                 <a key={item.label} href={item.href}
                   className={`block px-4 py-3 hover:bg-black hover:text-white transition-colors group${i > 0 ? " border-t border-black" : ""}`}>
@@ -408,11 +590,13 @@ export default function Home() {
           </aside>
         </div>
 
-        {/* ── Full-width: What's In The Paper ───────────────── */}
+        {/* ── What's in the Paper ──────────────────────────────── */}
         <section className="border-t-2 border-black pt-8 pb-8 mt-0">
           <div className="text-center mb-7">
             <h2 className="text-2xl sm:text-3xl font-serif font-bold uppercase tracking-widest mb-1">What's in the Paper</h2>
-            <p className="text-[10px] uppercase tracking-widest font-bold text-gray-500">Twelve Pages, Every Thursday. One Cohesive Newspaper.</p>
+            <p className="text-[10px] uppercase tracking-widest font-bold text-gray-500">
+              {pageCount} Pages, Every Thursday. One Cohesive Newspaper.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-y-5 gap-x-4 border-b-2 border-black pb-8">
@@ -429,7 +613,7 @@ export default function Home() {
               { num: 10, title: "Shell Shocker & Crossword", desc: "The cycle's most staggering verified crime story — alongside the case-file crossword, trivia, and weekly clues." },
               { num: 11, title: "Ink & Alibi",               desc: "Recurring comic, Wire Hunt, and reader artwork." },
               { num: 12, title: "Market Page",               desc: "Vintage-style advertisements, Morning Joe comic, and Press Club QR." },
-            ].map((s) => (
+            ].map(s => (
               <div key={s.num} className="border-l-2 border-black pl-3">
                 <span className="text-[9px] font-bold uppercase tracking-widest block mb-0.5 text-gray-500">Page {s.num}</span>
                 <h4 className="font-serif font-bold text-sm mb-0.5 leading-tight">{s.title}</h4>
@@ -443,7 +627,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── How to Get It ─────────────────────────────────── */}
+        {/* ── How to Get It ────────────────────────────────────── */}
         <section className="py-8 border-b-2 border-black">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-0 divide-y md:divide-y-0 md:divide-x divide-black border border-black">
             <div className="px-6 py-6 text-center">
@@ -465,8 +649,8 @@ export default function Home() {
             <div className="px-6 py-6 flex flex-col items-center text-center">
               <h4 className="text-sm font-bold uppercase tracking-widest mb-3">Street Sheet</h4>
               <div className="w-28 h-28 border-4 border-black flex items-center justify-center mb-2 bg-white">
-                {EDITION_URL ? (
-                  <QRCodeSVG value={EDITION_URL} size={96} bgColor="#ffffff" fgColor="#000000" level="M" />
+                {readCtaUrl ? (
+                  <QRCodeSVG value={readCtaUrl} size={96} bgColor="#ffffff" fgColor="#000000" level="M" />
                 ) : (
                   <span className="font-bold text-[9px] text-center uppercase tracking-widest px-2 text-gray-400">Edition URL not set</span>
                 )}
@@ -476,7 +660,7 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ── Reader Desk ──── ALL LOGIC PRESERVED ──────────── */}
+        {/* ── Reader Desk — ALL LOGIC PRESERVED ──────────────── */}
         <section className="my-10 border-4 border-black p-6 sm:p-10 max-w-4xl mx-auto">
           <header className="text-center mb-8 border-b border-black pb-5">
             <h2 className="text-2xl font-serif font-bold uppercase tracking-widest mb-2">Reader Desk</h2>
@@ -518,7 +702,7 @@ export default function Home() {
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-widest mb-2">Message *</label>
                 <textarea {...tipForm.register("message")} rows={5}
-                  className="w-full border border-black p-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-black bg-white resize-none"></textarea>
+                  className="w-full border border-black p-3 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-black bg-white resize-none" />
                 {tipForm.formState.errors.message && (
                   <p className="text-[10px] text-red-600 font-bold mt-1 uppercase">{tipForm.formState.errors.message.message}</p>
                 )}
@@ -545,7 +729,7 @@ export default function Home() {
 
       </div>
 
-      {/* ── Footer ─────────────────────────────────────────── */}
+      {/* ── Footer ───────────────────────────────────────────── */}
       <footer className="border-t-4 border-black bg-black text-white py-8 mt-0">
         <div className="max-w-4xl mx-auto px-4 text-center flex flex-col items-center">
           <div className="text-[9px] font-bold uppercase tracking-[0.35em] text-gray-500 mb-1">RSR Crime Division</div>

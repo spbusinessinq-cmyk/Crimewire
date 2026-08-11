@@ -81,6 +81,7 @@ export default function AdminDashboard({ onNavigate }: Props) {
   if (loading) return <Spinner />;
 
   const quickActions = [
+    { label: "Edit Front Page",         tab: "front-page" },
     { label: "New City Report",         tab: "reports" },
     { label: "New Court Update",        tab: "reports" },
     { label: "New Field Dispatch",      tab: "reports" },

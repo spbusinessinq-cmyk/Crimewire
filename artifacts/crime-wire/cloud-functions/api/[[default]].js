@@ -500,7 +500,10 @@ app.patch("/tips/:id", requireAdmin, async (req, res) => {
 // ── Issues (Crime Wire editions) ─────────────────────────────
 // =============================================================
 
-const issueUpload = memUpload.single("pdf");
+const issueUpload = memUpload.fields([
+  { name: "pdf",   maxCount: 1 },
+  { name: "cover", maxCount: 1 },
+]);
 
 function fmtIssue(r) { return r; }
 
@@ -546,10 +549,19 @@ app.post("/issues", requireAdmin, (req, res) => {
       const body = req.body ?? {};
       let pdfUrl = body.pdfUrl ?? null;
 
-      if (req.file) {
-        const filename = `${Date.now()}-${safeName(req.file.originalname)}`;
-        await saveFile(`editions/${filename}`, req.file.buffer, req.file.mimetype);
+      const pdfFile = req.files?.pdf?.[0];
+      if (pdfFile) {
+        const filename = `${Date.now()}-${safeName(pdfFile.originalname)}`;
+        await saveFile(`editions/${filename}`, pdfFile.buffer, pdfFile.mimetype);
         pdfUrl = `/api/files/editions/${filename}`;
+      }
+
+      let coverImageUrl = body.coverImageUrl ?? null;
+      const coverFile = req.files?.cover?.[0];
+      if (coverFile) {
+        const filename = `${Date.now()}-cover-${safeName(coverFile.originalname)}`;
+        await saveFile(`editions/${filename}`, coverFile.buffer, coverFile.mimetype);
+        coverImageUrl = `/api/files/editions/${filename}`;
       }
 
       const id = await nextId("cw-issues");
@@ -560,12 +572,23 @@ app.post("/issues", requireAdmin, (req, res) => {
         title: body.title,
         tagline: body.tagline ?? null,
         headline: body.headline ?? null,
+        deck: body.deck ?? null,
+        caseLabel: body.caseLabel ?? null,
         description: body.description ?? null,
         pdfUrl,
+        coverImageUrl,
         pageCount: parseInt(body.pageCount, 10) || 12,
         accessLevel: body.accessLevel ?? "public",
         status: body.status ?? "draft",
         publishDate: body.publishDate ?? null,
+        dropDate: body.dropDate ?? null,
+        countdownEnabled: body.countdownEnabled !== "false",
+        publicStatus: body.publicStatus ?? null,
+        readCtaLabel: body.readCtaLabel ?? null,
+        readCtaUrl: body.readCtaUrl ?? null,
+        downloadCtaLabel: body.downloadCtaLabel ?? null,
+        downloadCtaUrl: body.downloadCtaUrl ?? null,
+        joinCtaLabel: body.joinCtaLabel ?? null,
         createdAt: now(),
         updatedAt: now(),
       };
@@ -601,16 +624,31 @@ app.patch("/issues/:id", requireAdmin, (req, res) => {
       const body = req.body ?? {};
       const rec = all[idx];
 
-      if (req.file) {
-        const filename = `${Date.now()}-${safeName(req.file.originalname)}`;
-        await saveFile(`editions/${filename}`, req.file.buffer, req.file.mimetype);
+      const pdfFile2 = req.files?.pdf?.[0];
+      if (pdfFile2) {
+        const filename = `${Date.now()}-${safeName(pdfFile2.originalname)}`;
+        await saveFile(`editions/${filename}`, pdfFile2.buffer, pdfFile2.mimetype);
         rec.pdfUrl = `/api/files/editions/${filename}`;
       }
 
-      const fields = ["volume", "number", "title", "tagline", "headline", "description",
-                      "pdfUrl", "pageCount", "accessLevel", "status", "publishDate"];
+      const coverFile2 = req.files?.cover?.[0];
+      if (coverFile2) {
+        const filename = `${Date.now()}-cover-${safeName(coverFile2.originalname)}`;
+        await saveFile(`editions/${filename}`, coverFile2.buffer, coverFile2.mimetype);
+        rec.coverImageUrl = `/api/files/editions/${filename}`;
+      }
+
+      const fields = [
+        "volume", "number", "title", "tagline", "headline", "deck", "caseLabel",
+        "description", "pdfUrl", "coverImageUrl", "pageCount", "accessLevel",
+        "status", "publishDate", "dropDate", "publicStatus",
+        "readCtaLabel", "readCtaUrl", "downloadCtaLabel", "downloadCtaUrl", "joinCtaLabel",
+      ];
       for (const f of fields) {
         if (body[f] !== undefined) rec[f] = body[f];
+      }
+      if (body.countdownEnabled !== undefined) {
+        rec.countdownEnabled = body.countdownEnabled !== "false" && body.countdownEnabled !== false;
       }
       rec.updatedAt = now();
 
