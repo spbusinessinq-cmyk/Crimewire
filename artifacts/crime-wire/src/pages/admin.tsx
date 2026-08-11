@@ -12,6 +12,7 @@ import AdminAdvertisers from "./admin/AdminAdvertisers";
 import AdminCorrections from "./admin/AdminCorrections";
 import AdminSettings from "./admin/AdminSettings";
 import AdminFrontPage from "./admin/AdminFrontPage";
+import AdminComics from "./admin/AdminComics";
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
@@ -22,6 +23,7 @@ type TabId =
   | "case-files"
   | "uploads"
   | "crime-wire"
+  | "comics"
   | "reader-inbox"
   | "mailing-list"
   | "advertisers"
@@ -35,6 +37,7 @@ const TABS: { id: TabId; label: string; short: string }[] = [
   { id: "case-files",   label: "Case Files",        short: "Cases" },
   { id: "uploads",      label: "Records & Uploads", short: "Uploads" },
   { id: "crime-wire",   label: "Crime Wire",        short: "CW" },
+  { id: "comics",       label: "The Funnies",       short: "Comics" },
   { id: "reader-inbox", label: "Reader Inbox",      short: "Inbox" },
   { id: "mailing-list", label: "Mailing List",      short: "Mail" },
   { id: "advertisers",  label: "Advertisers",       short: "Ads" },
@@ -296,6 +299,7 @@ export default function Admin() {
           {activeTab === "case-files"   && <AdminCaseFiles />}
           {activeTab === "uploads"      && <AdminUploads />}
           {activeTab === "crime-wire"   && <AdminCrimeWire />}
+          {activeTab === "comics"       && <AdminComics />}
           {activeTab === "reader-inbox" && <AdminReaderInbox />}
           {activeTab === "mailing-list" && <AdminMailingList />}
           {activeTab === "advertisers"  && <AdminAdvertisers />}

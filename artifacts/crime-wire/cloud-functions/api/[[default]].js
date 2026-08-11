@@ -1710,6 +1710,156 @@ app.post("/admin/seed", requireAdmin, async (_req, res) => {
 });
 
 // =============================================================
+// ── Comics ────────────────────────────────────────────────────
+// =============================================================
+
+const comicUpload = memUpload.single("artwork");
+
+// Public: published strips only, sorted by series then episode desc
+app.get("/comics", async (_req, res) => {
+  try {
+    const all = await getAll("cw-comics");
+    const published = all
+      .filter((c) => c.status === "published")
+      .sort((a, b) => {
+        if (a.series !== b.series) return a.series.localeCompare(b.series);
+        return (b.episode ?? 0) - (a.episode ?? 0);
+      });
+    return res.json(published);
+  } catch (e) {
+    return res.status(500).json({ error: "Storage error" });
+  }
+});
+
+// Admin: all comics
+app.get("/admin/comics", requireAdmin, async (_req, res) => {
+  try {
+    const all = await getAll("cw-comics");
+    all.sort((a, b) => {
+      if (a.series !== b.series) return a.series.localeCompare(b.series);
+      return (b.episode ?? 0) - (a.episode ?? 0);
+    });
+    return res.json(all);
+  } catch (e) {
+    return res.status(500).json({ error: "Storage error" });
+  }
+});
+
+// Admin: create comic
+app.post("/admin/comics", requireAdmin, (req, res) => {
+  comicUpload(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    try {
+      const body = req.body ?? {};
+      let artworkUrl = body.artworkUrl || null;
+
+      if (req.file) {
+        const filename = `${Date.now()}-${safeName(req.file.originalname)}`;
+        await saveFile(`comics/${filename}`, req.file.buffer, req.file.mimetype);
+        artworkUrl = `/api/files/comics/${filename}`;
+      }
+
+      const id = await nextId("cw-comics");
+      const all = await getAll("cw-comics");
+      const record = {
+        id,
+        series: body.series ?? "ink-and-alibi",
+        episode: body.episode ? parseInt(body.episode, 10) : null,
+        title: body.title || null,
+        artworkUrl,
+        caption: body.caption || null,
+        transcript: body.transcript || null,
+        publishDate: body.publishDate || null,
+        status: body.status ?? "draft",
+        sortOrder: body.sortOrder ? parseInt(body.sortOrder, 10) : id,
+        createdAt: now(),
+        updatedAt: now(),
+      };
+      all.unshift(record);
+      await saveAll("cw-comics", all);
+      await logAction("create", "comic", id, `${record.series} #${record.episode}: ${record.title}`);
+      return res.status(201).json(record);
+    } catch (e) {
+      console.error("POST /admin/comics:", e);
+      return res.status(500).json({ error: "Storage error" });
+    }
+  });
+});
+
+// Admin: update comic
+app.patch("/admin/comics/:id", requireAdmin, (req, res) => {
+  comicUpload(req, res, async (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    try {
+      const id = parseInt(req.params.id, 10);
+      const all = await getAll("cw-comics");
+      const idx = all.findIndex((c) => c.id === id);
+      if (idx === -1) return res.status(404).json({ error: "Not found" });
+
+      const body = req.body ?? {};
+
+      if (req.file) {
+        const filename = `${Date.now()}-${safeName(req.file.originalname)}`;
+        await saveFile(`comics/${filename}`, req.file.buffer, req.file.mimetype);
+        all[idx].artworkUrl = `/api/files/comics/${filename}`;
+      } else if (body.artworkUrl !== undefined) {
+        all[idx].artworkUrl = body.artworkUrl || null;
+      }
+
+      const strFields = ["series", "title", "caption", "transcript", "publishDate", "status"];
+      const intFields = ["episode", "sortOrder"];
+      for (const f of strFields) {
+        if (body[f] !== undefined) all[idx][f] = body[f] || null;
+      }
+      for (const f of intFields) {
+        if (body[f] !== undefined) all[idx][f] = body[f] ? parseInt(body[f], 10) : null;
+      }
+      all[idx].updatedAt = now();
+      await saveAll("cw-comics", all);
+      await logAction("update", "comic", id, `${all[idx].series} #${all[idx].episode}: ${all[idx].title}`);
+      return res.json(all[idx]);
+    } catch (e) {
+      console.error("PATCH /admin/comics/:id:", e);
+      return res.status(500).json({ error: "Storage error" });
+    }
+  });
+});
+
+// Admin: delete comic (hard delete)
+app.delete("/admin/comics/:id", requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const all = await getAll("cw-comics");
+    const idx = all.findIndex((c) => c.id === id);
+    if (idx === -1) return res.status(404).json({ error: "Not found" });
+    await logAction("delete", "comic", id, `${all[idx].series} #${all[idx].episode}`);
+    all.splice(idx, 1);
+    await saveAll("cw-comics", all);
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ error: "Storage error" });
+  }
+});
+
+// Public file serving for comics artwork (timestamp-prefixed, effectively unguessable)
+app.get("/files/comics/:filename", async (req, res) => {
+  try {
+    const buf = await getFile(`comics/${req.params.filename}`);
+    if (!buf) return res.status(404).json({ error: "File not found" });
+    const name = req.params.filename.toLowerCase();
+    const mime = name.endsWith(".png") ? "image/png"
+      : name.endsWith(".gif") ? "image/gif"
+      : name.endsWith(".webp") ? "image/webp"
+      : "image/jpeg";
+    res.setHeader("Content-Type", mime);
+    res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    return res.send(Buffer.from(buf));
+  } catch (e) {
+    return res.status(500).json({ error: "Storage error" });
+  }
+});
+
+// =============================================================
 // ── Catch-all: 404 for unknown API routes ─────────────────────
 // =============================================================
 

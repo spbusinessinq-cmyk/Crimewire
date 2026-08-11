@@ -24,6 +24,7 @@ import CwGameDesk from '@/pages/cw-game-desk';
 import CwMarket from '@/pages/cw-market';
 import CwPaperTrail from '@/pages/cw-paper-trail';
 import CwMorgue from '@/pages/cw-morgue';
+import CwTheFunnies from '@/pages/cw-the-funnies';
 
 const queryClient = new QueryClient();
 
@@ -54,6 +55,7 @@ function Router() {
             <Route path="/crime-wire/market" component={CwMarket} />
             <Route path="/crime-wire/paper-trail" component={CwPaperTrail} />
             <Route path="/crime-wire/morgue" component={CwMorgue} />
+            <Route path="/crime-wire/the-funnies" component={CwTheFunnies} />
 
             {/* Legacy: /reader-desk → Crime Wire reader desk */}
             <Route path="/reader-desk" component={CwReaderDesk} />

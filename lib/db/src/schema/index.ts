@@ -11,3 +11,4 @@ export * from "./records_requests";
 export * from "./advertisers";
 export * from "./admin_log";
 export * from "./newsroom_settings";
+export * from "./comics";

@@ -88,6 +88,7 @@ export default function AdminDashboard({ onNavigate }: Props) {
     { label: "Upload Record",           tab: "uploads" },
     { label: "Open Case File",          tab: "case-files" },
     { label: "Upload Crime Wire PDF",   tab: "crime-wire" },
+    { label: "Manage Comics",           tab: "comics" },
     { label: "Publish Correction",      tab: "corrections" },
   ];
 

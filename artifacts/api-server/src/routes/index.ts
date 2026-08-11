@@ -1,4 +1,6 @@
 import { Router, type IRouter } from "express";
+import path from "path";
+import fs from "fs";
 import authRouter from "./auth";
 import healthRouter from "./health";
 import subscriptionsRouter from "./subscriptions";
@@ -14,6 +16,7 @@ import recordsRequestsRouter from "./records-requests";
 import advertisersRouter from "./advertisers";
 import adminLogRouter from "./admin-log";
 import settingsRouter from "./settings";
+import { comicsPublicRouter, comicsAdminRouter } from "./comics";
 
 const router: IRouter = Router();
 
@@ -32,5 +35,21 @@ router.use("/records-requests", recordsRequestsRouter);
 router.use("/advertisers", advertisersRouter);
 router.use("/admin-log", adminLogRouter);
 router.use("/settings", settingsRouter);
+
+// Comics — public list and admin CRUD
+router.use("/comics", comicsPublicRouter);
+router.use("/admin/comics", comicsAdminRouter);
+
+// Comics artwork file serving (dev: reads from public/comics directory)
+const comicsDir = path.resolve(process.cwd(), "artifacts/crime-wire/public/comics");
+router.get("/files/comics/:filename", (req, res) => {
+  const filename = path.basename(req.params.filename);
+  const filePath = path.join(comicsDir, filename);
+  if (!fs.existsSync(filePath)) {
+    res.status(404).json({ error: "File not found" });
+    return;
+  }
+  res.sendFile(filePath);
+});
 
 export default router;
