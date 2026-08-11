@@ -256,17 +256,6 @@ export default function Home() {
   return (
     <div className="min-h-[100dvh] bg-white text-black font-sans w-full overflow-x-hidden selection:bg-black selection:text-white">
 
-      {/* ── Dateline strip ───────────────────────────────────── */}
-      <div className="w-full border-b border-black py-1.5 px-4 bg-white">
-        <div className="max-w-[1200px] mx-auto flex items-center justify-between gap-2">
-          <span className="text-[9px] font-bold uppercase tracking-[0.22em]">RSR Crime Division · Los Angeles Bureau</span>
-          <span className="text-[9px] font-bold uppercase tracking-[0.22em] hidden md:block">
-            {stripVol} · {pagesStr} · Free Digital Edition
-          </span>
-          <span className="text-[9px] font-bold uppercase tracking-[0.22em]">{shortDateStr}</span>
-        </div>
-      </div>
-
       {/* ── Thursday Drop countdown bar ──────────────────────── */}
       {countdownOn && (
         <div className="w-full bg-black text-white px-4 py-1.5">
