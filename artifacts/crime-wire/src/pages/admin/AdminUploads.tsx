@@ -229,7 +229,7 @@ export default function AdminUploads() {
             ))}
           </div>
           <p className="text-[10px] text-gray-400 mt-2">
-            Note: Files are stored on local disk and will not persist across redeploys. Integrate Replit Object Storage for persistence.
+            To review storage configuration, see Settings.
           </p>
         </div>
       )}
