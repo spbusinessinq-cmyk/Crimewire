@@ -113,22 +113,50 @@ const memUpload = multer({
 
 async function saveFile(fileKey, buffer, mimeType) {
   const store = getStore("cw-files");
-  // Binary store.set() PUT to COS lacks Content-Type → COS rejects it.
-  // Instead encode as base64 JSON using setJSON (proven to work).
-  const b64 = Buffer.from(buffer).toString("base64");
-  await store.setJSON(fileKey, { b64, mimeType, size: buffer.length });
+  // ── Why presigned URL and not store.set() or store.setJSON() ──────────────
+  // store.set()     → no Content-Type option in the public API; COS rejects binary PUT.
+  // store.setJSON() → base64-encodes the buffer then JSON.stringify's it; a 12-page
+  //                   print PDF inflates to 13–40 MB of JSON, which exceeds the blob
+  //                   CDN (blob-nocache.edgeone.site) document-size limit → HTTP 5xx.
+  // createUploadUrl → returns a presigned COS PUT URL with Content-Type signed into
+  //                   the HMAC so we bypass the CDN layer and stream raw binary
+  //                   directly to COS (5 GB max, no JSON overhead).
+  // ─────────────────────────────────────────────────────────────────────────
+  const { url } = await store.createUploadUrl(fileKey, {
+    contentType: mimeType,
+    expireSeconds: 300, // 5 minutes — consumed immediately after generation
+  });
+  const uploadRes = await fetch(url, {
+    method: "PUT",
+    body: Buffer.from(buffer), // Buffer extends Uint8Array — valid fetch body in Node 18+
+    headers: { "Content-Type": mimeType }, // must match the signed Content-Type
+  });
+  if (!uploadRes.ok) {
+    const detail = await uploadRes.text().catch(() => "");
+    throw new Error(
+      `File upload to storage failed (HTTP ${uploadRes.status})${detail ? ": " + detail.slice(0, 250) : ""}`
+    );
+  }
+  await uploadRes.arrayBuffer().catch(() => {}); // drain connection before returning
 }
 
 async function getFile(fileKey) {
   const store = getStore("cw-files");
-  const meta = await store.get(fileKey, { type: "json" });
-  if (!meta) return null;
-  // New format: { b64, mimeType, size }
-  if (meta && typeof meta === "object" && meta.b64) {
-    return Buffer.from(meta.b64, "base64");
+  const raw = await store.get(fileKey, { type: "arrayBuffer" });
+  if (!raw) return null;
+  const bytes = new Uint8Array(raw);
+  // Detect legacy base64-JSON format: starts with '{' (0x7B)
+  // New format (raw binary PDF) starts with '%PDF' (0x25 0x50 0x44 0x46).
+  if (bytes.length > 0 && bytes[0] === 0x7b) {
+    try {
+      const meta = JSON.parse(new TextDecoder().decode(raw));
+      if (meta && typeof meta.b64 === "string") {
+        return Buffer.from(meta.b64, "base64");
+      }
+    } catch { /* not valid JSON — fall through and return raw */ }
   }
-  // Legacy fallback: raw binary (pre-fix uploads)
-  return store.get(fileKey, { type: "arrayBuffer" });
+  // New format: raw binary stored via presigned PUT
+  return Buffer.from(raw);
 }
 
 function safeName(original) {
@@ -561,6 +589,8 @@ app.get("/issues/latest", async (_req, res) => {
 
 app.post("/issues", requireAdmin, (req, res) => {
   issueUpload(req, res, async (err) => {
+    let newPdfKey = null;
+    let newCoverKey = null;
     try {
       if (err) return res.status(400).json({ error: err.message || "Upload error" });
 
@@ -570,7 +600,8 @@ app.post("/issues", requireAdmin, (req, res) => {
       const pdfFile = req.files?.pdf?.[0];
       if (pdfFile) {
         const filename = `${Date.now()}-${safeName(pdfFile.originalname)}`;
-        await saveFile(`editions/${filename}`, pdfFile.buffer, pdfFile.mimetype);
+        newPdfKey = `editions/${filename}`;
+        await saveFile(newPdfKey, pdfFile.buffer, pdfFile.mimetype);
         pdfUrl = `/api/files/editions/${filename}`;
       }
 
@@ -578,7 +609,8 @@ app.post("/issues", requireAdmin, (req, res) => {
       const coverFile = req.files?.cover?.[0];
       if (coverFile) {
         const filename = `${Date.now()}-cover-${safeName(coverFile.originalname)}`;
-        await saveFile(`editions/${filename}`, coverFile.buffer, coverFile.mimetype);
+        newCoverKey = `editions/${filename}`;
+        await saveFile(newCoverKey, coverFile.buffer, coverFile.mimetype);
         coverImageUrl = `/api/files/editions/${filename}`;
       }
 
@@ -622,9 +654,13 @@ app.post("/issues", requireAdmin, (req, res) => {
       all.push(record);
       await saveAll("cw-issues", all);
       await logAction("create", "issue", id, `${record.number}: ${record.title}`);
+      newPdfKey = null; newCoverKey = null; // commit succeeded
       return res.status(201).json(fmtIssue(record));
     } catch (e) {
       console.error("POST /issues:", e);
+      const cwStore = getStore("cw-files");
+      if (newPdfKey)   cwStore.delete(newPdfKey).catch(() => {});
+      if (newCoverKey) cwStore.delete(newCoverKey).catch(() => {});
       return res.status(500).json({ error: e.message || "Server error" });
     }
   });
@@ -632,6 +668,9 @@ app.post("/issues", requireAdmin, (req, res) => {
 
 app.patch("/issues/:id", requireAdmin, (req, res) => {
   issueUpload(req, res, async (err) => {
+    // Track newly-uploaded blob keys so we can delete them if the DB write fails.
+    let newPdfKey = null;
+    let newCoverKey = null;
     try {
       if (err) return res.status(400).json({ error: err.message || "Upload error" });
 
@@ -646,14 +685,16 @@ app.patch("/issues/:id", requireAdmin, (req, res) => {
       const pdfFile2 = req.files?.pdf?.[0];
       if (pdfFile2) {
         const filename = `${Date.now()}-${safeName(pdfFile2.originalname)}`;
-        await saveFile(`editions/${filename}`, pdfFile2.buffer, pdfFile2.mimetype);
+        newPdfKey = `editions/${filename}`;
+        await saveFile(newPdfKey, pdfFile2.buffer, pdfFile2.mimetype);
         rec.pdfUrl = `/api/files/editions/${filename}`;
       }
 
       const coverFile2 = req.files?.cover?.[0];
       if (coverFile2) {
         const filename = `${Date.now()}-cover-${safeName(coverFile2.originalname)}`;
-        await saveFile(`editions/${filename}`, coverFile2.buffer, coverFile2.mimetype);
+        newCoverKey = `editions/${filename}`;
+        await saveFile(newCoverKey, coverFile2.buffer, coverFile2.mimetype);
         rec.coverImageUrl = `/api/files/editions/${filename}`;
       }
 
@@ -680,9 +721,16 @@ app.patch("/issues/:id", requireAdmin, (req, res) => {
       all[idx] = rec;
       await saveAll("cw-issues", all);
       await logAction("update", "issue", id, `${rec.number}: ${rec.title}`);
+      // Commit succeeded — clear orphan references before returning
+      newPdfKey = null; newCoverKey = null;
       return res.json(fmtIssue(rec));
     } catch (e) {
       console.error("PATCH /issues/:id:", e);
+      // Delete any blobs uploaded in this request that were not committed to the DB.
+      // store.delete() treats 404 as success, so this is safe even if saveFile threw.
+      const cwStore = getStore("cw-files");
+      if (newPdfKey)   cwStore.delete(newPdfKey).catch(() => {});
+      if (newCoverKey) cwStore.delete(newCoverKey).catch(() => {});
       return res.status(500).json({ error: e.message || "Server error" });
     }
   });
@@ -1959,24 +2007,51 @@ app.get("/files/comics/:filename", async (req, res) => {
 
 app.get("/admin/blob-test", requireAdmin, async (_req, res) => {
   const results = {};
-  // Test write+read round-trip on cw-files
+
+  // Test 1: JSON write+read round-trip (config/metadata path)
   try {
     const store = getStore("cw-files");
-    const testKey = "__health__";
     const testPayload = { ok: true, ts: Date.now() };
-    await store.setJSON(testKey, testPayload);
-    const readBack = await store.get(testKey, { type: "json" });
-    results.cwFiles = { ok: true, roundTrip: readBack?.ok === true };
+    await store.setJSON("__health__", testPayload);
+    const readBack = await store.get("__health__", { type: "json" });
+    results.cwFilesJson = { ok: true, roundTrip: readBack?.ok === true };
   } catch (e) {
-    results.cwFiles = { ok: false, error: e.message };
+    results.cwFilesJson = { ok: false, error: e.message };
   }
-  // Test cw-issues read
+
+  // Test 2: Binary upload+download round-trip via presigned PUT (same code path as PDF uploads)
+  try {
+    const size = 100 * 1024; // 100 KB synthetic binary
+    const testBuf = Buffer.alloc(size);
+    // Write a fake PDF header so getFile doesn't mistake it for legacy JSON
+    testBuf[0] = 0x25; testBuf[1] = 0x50; testBuf[2] = 0x44; testBuf[3] = 0x46; // %PDF
+    testBuf[size - 1] = 0xff; // sentinel byte at end
+    await saveFile("__binary-health__", testBuf, "application/pdf");
+    const readBack = await getFile("__binary-health__");
+    results.cwFilesBinary = {
+      ok: true,
+      uploadedBytes: size,
+      downloadedBytes: readBack?.length ?? 0,
+      sizeMatch: readBack?.length === size,
+      headerMatch: readBack?.[0] === 0x25 && readBack?.[1] === 0x50,
+      sentinelMatch: readBack?.[size - 1] === 0xff,
+    };
+  } catch (e) {
+    results.cwFilesBinary = { ok: false, error: e.message };
+  }
+
+  // Test 3: cw-issues store read
   try {
     const issues = await getAll("cw-issues");
     results.issueCount = issues.length;
+    const published = issues.find((i) => i.status === "published");
+    if (published) {
+      results.currentIssue = { id: published.id, title: published.title, hasPdf: !!published.pdfUrl };
+    }
   } catch (e) {
     results.issueCount = { error: e.message };
   }
+
   return res.json(results);
 });
 
