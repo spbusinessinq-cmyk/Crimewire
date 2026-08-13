@@ -20,8 +20,13 @@ interface EmailStatus {
 }
 interface LogEntry {
   id: number; type: string; subject?: string; to?: string;
-  sent?: number; failed?: number; total?: number; ok?: boolean;
+  sent?: number; failed?: number; total?: number; skipped?: number; ok?: boolean;
   error?: string | null; timestamp: string; category?: string;
+}
+interface DispatchIssue {
+  id: number; volume: number; number: string; title: string;
+  publishDate: string | null; pdfUrl: string | null;
+  readCtaUrl: string | null; downloadCtaUrl: string | null; status: string;
 }
 
 type TabId = "digital" | "press_club" | "dispatch";
@@ -57,29 +62,64 @@ export default function AdminMailingList() {
   const [issueUrl, setIssueUrl] = useState("");
   const [issueConfirm, setIssueConfirm] = useState(false);
   const [issueSending, setIssueSending] = useState(false);
-  const [issueResult, setIssueResult] = useState<{ ok: boolean; msg: string; sent?: number; failed?: number } | null>(null);
+  const [issueResult, setIssueResult] = useState<{ ok: boolean; msg: string; sent?: number; failed?: number; skipped?: number; duplicate?: boolean } | null>(null);
+  const [issues, setIssues] = useState<DispatchIssue[]>([]);
+  const [selectedIssueId, setSelectedIssueId] = useState<number | null>(null);
+  const [issueMessage, setIssueMessage] = useState("");
+  const [recipientInfo, setRecipientInfo] = useState<{ eligible: number; total: number; skipped: number } | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   const loadAll = useCallback(() => {
     setLoading(true);
     Promise.all([
       api("/subscriptions").then((r) => r.ok ? r.json() : []),
       api("/press-club").then((r) => r.ok ? r.json() : []),
-    ]).then(([subs, pc]) => {
-      const clean = (arr: any[], email: string) =>
+      api("/issues/all").then((r) => r.ok ? r.json() : []),
+    ]).then(([subs, pc, iss]) => {
+      const clean = (arr: any[]) =>
         arr.filter((s: any) => !s.email.includes("test@") && !s.email.includes("audit@") && !s.email.includes("example.com"));
-      setSubscribers(clean(subs as Subscriber[], ""));
-      setPressClub(clean(pc as PressClubMember[], ""));
+      setSubscribers(clean(subs as Subscriber[]));
+      setPressClub(clean(pc as PressClubMember[]));
+      const publishedIss = (iss as DispatchIssue[])
+        .filter((i) => i.status === "published" || i.status === "archived")
+        .sort((a, b) => {
+          const diff = new Date(b.publishDate ?? "").getTime() - new Date(a.publishDate ?? "").getTime();
+          return diff !== 0 ? diff : b.id - a.id;
+        });
+      setIssues(publishedIss);
+      setSelectedIssueId((prev) => {
+        if (prev !== null) return prev;
+        const current = (iss as DispatchIssue[]).find((i) => i.status === "published");
+        return current?.id ?? null;
+      });
     }).finally(() => setLoading(false));
   }, []);
 
   const loadEmailStatus = useCallback(() => {
     setEmailLoading(true);
-    api("/admin/email/status").then(async (r) => {
-      if (r.ok) setEmailStatus(await r.json());
+    Promise.all([
+      api("/admin/email/status").then(async (r) => r.ok ? r.json() : null),
+      api("/admin/email/recipients").then(async (r) => r.ok ? r.json() : null),
+    ]).then(([status, recipients]) => {
+      if (status) setEmailStatus(status);
+      if (recipients) setRecipientInfo(recipients);
     }).finally(() => setEmailLoading(false));
   }, []);
 
   useEffect(() => { loadAll(); loadEmailStatus(); }, [loadAll, loadEmailStatus]);
+
+  // Auto-populate subject/preview when an issue is selected
+  useEffect(() => {
+    if (!selectedIssueId || !issues.length) return;
+    const sel = issues.find((i) => i.id === selectedIssueId);
+    if (!sel) return;
+    const dateStr = sel.publishDate
+      ? new Date(sel.publishDate + (sel.publishDate.length === 10 ? "T12:00:00" : ""))
+          .toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
+      : "";
+    setIssueSubject(`Los Angeles Crime Wire \u2014 ${dateStr || sel.title}`);
+    setIssuePreview((prev) => prev || sel.title || "");
+  }, [selectedIssueId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function updatePressClub(id: number, updates: Partial<PressClubMember>) {
     setSaving(true); setError(""); setSuccess("");
@@ -104,15 +144,21 @@ export default function AdminMailingList() {
     setIssueSending(true); setIssueResult(null);
     const res = await api("/admin/email/send-issue", {
       method: "POST",
-      body: JSON.stringify({ subject: issueSubject, preview: issuePreview, issueUrl, confirmSend: true }),
+      body: JSON.stringify({
+        subject: issueSubject,
+        preview: issuePreview,
+        message: issueMessage,
+        issueId: selectedIssueId,
+        confirmSend: true,
+      }),
     });
     const d = await res.json();
     if (res.ok) {
-      setIssueResult({ ok: true, msg: `Dispatched ${d.sent} of ${d.total}`, sent: d.sent, failed: d.failed });
+      setIssueResult({ ok: true, msg: `Dispatched to ${d.sent} of ${d.total} eligible`, sent: d.sent, failed: d.failed, skipped: d.skipped });
       setIssueConfirm(false);
       loadEmailStatus();
     } else {
-      setIssueResult({ ok: false, msg: d.error });
+      setIssueResult({ ok: false, msg: d.error, duplicate: d.duplicate });
     }
     setIssueSending(false);
   }
@@ -381,18 +427,72 @@ export default function AdminMailingList() {
               {/* Send Issue */}
               <section className="border-2 border-black p-5">
                 <h3 className="text-xs font-bold uppercase tracking-widest border-b border-black pb-3 mb-4">
-                  Send Thursday Drop — {activeSubs.length} active subscriber{activeSubs.length !== 1 ? "s" : ""}
+                  Send Thursday Drop
+                  {recipientInfo && (
+                    <span className="text-gray-400 font-normal normal-case tracking-normal ml-2">
+                      — {recipientInfo.eligible} digital-eligible subscriber{recipientInfo.eligible !== 1 ? "s" : ""}
+                    </span>
+                  )}
                 </h3>
 
                 {issueResult && (
-                  <div className={`mb-4 p-3 text-xs font-bold uppercase tracking-wider ${issueResult.ok ? "bg-green-50 border border-green-200 text-green-800" : "bg-red-50 border border-red-200 text-red-700"}`}>
-                    {issueResult.msg}
-                    {issueResult.ok && issueResult.failed! > 0 && ` (${issueResult.failed} failed — check delivery log)`}
+                  <div className={`mb-4 p-3 text-xs ${issueResult.ok ? "bg-green-50 border border-green-200 text-green-800" : "bg-red-50 border border-red-200 text-red-700"}`}>
+                    <p className="font-bold uppercase tracking-wider">{issueResult.msg}</p>
+                    {issueResult.ok && (
+                      <p className="mt-1 text-[10px]">
+                        {issueResult.sent ?? 0} delivered · {issueResult.failed ?? 0} failed
+                        {(issueResult.skipped ?? 0) > 0 && ` · ${issueResult.skipped} mailed-only skipped`}
+                        {(issueResult.failed ?? 0) > 0 && " — check delivery log for addresses"}
+                      </p>
+                    )}
+                    {issueResult.duplicate && (
+                      <p className="mt-1 text-[10px]">Each issue can only be dispatched once. Check the delivery log or select a different issue.</p>
+                    )}
                   </div>
                 )}
 
                 <div className="space-y-4">
-                  <Field label="Subject line" required hint="Appears in the reader's inbox. Be specific — this is the duplicate-send guard key.">
+
+                  {/* Issue selector */}
+                  <Field label="Edition" required hint="Select the published issue. Subject and preview will be auto-populated.">
+                    <select
+                      className={selectCls}
+                      value={selectedIssueId ?? ""}
+                      onChange={(e) => {
+                        setSelectedIssueId(e.target.value ? Number(e.target.value) : null);
+                        setIssuePreview(""); // let auto-fill re-run
+                        setIssueSubject("");
+                      }}
+                    >
+                      <option value="">— select an edition —</option>
+                      {issues.map((i) => {
+                        const dateStr = i.publishDate
+                          ? new Date(i.publishDate + (i.publishDate.length === 10 ? "T12:00:00" : ""))
+                              .toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                          : "";
+                        return (
+                          <option key={i.id} value={i.id}>
+                            {i.status === "published" ? "★ " : ""}Vol. {i.volume} No. {i.number} — {i.title}{dateStr ? ` (${dateStr})` : ""}
+                            {!i.pdfUrl ? " ⚠ no PDF" : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </Field>
+
+                  {/* Recipient breakdown */}
+                  {recipientInfo && (
+                    <div className="bg-gray-50 border border-gray-200 p-3 text-xs">
+                      <p className="text-[9px] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Recipient Breakdown</p>
+                      <div className="flex gap-6">
+                        <span><strong>{recipientInfo.eligible}</strong> digital-eligible</span>
+                        <span className="text-gray-400">{recipientInfo.skipped} mailed-only (will skip)</span>
+                        <span className="text-gray-400">{recipientInfo.total} active total</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <Field label="Subject line" required hint="Appears in the reader's inbox.">
                     <input
                       className={inputCls}
                       value={issueSubject}
@@ -410,15 +510,80 @@ export default function AdminMailingList() {
                     />
                   </Field>
 
-                  <Field label="Issue URL" hint="Direct link to the edition PDF or page. Shown as a CTA button in the email.">
-                    <input
-                      className={inputCls}
-                      type="url"
-                      value={issueUrl}
-                      onChange={(e) => setIssueUrl(e.target.value)}
-                      placeholder="https://lacrimewire.online/crime-wire"
+                  <Field label="Message body" hint="Optional note to subscribers shown above the Read button.">
+                    <textarea
+                      className={textareaCls}
+                      rows={3}
+                      value={issueMessage}
+                      onChange={(e) => setIssueMessage(e.target.value)}
+                      placeholder="This week's edition covers…"
                     />
                   </Field>
+
+                  {/* Email preview toggle */}
+                  {selectedIssueId && (
+                    <div>
+                      <button
+                        type="button"
+                        className="text-xs font-bold uppercase tracking-widest underline text-gray-600 hover:text-black"
+                        onClick={() => setShowPreview((p) => !p)}
+                      >
+                        {showPreview ? "Hide preview ▲" : "Preview email ▼"}
+                      </button>
+                      {showPreview && (() => {
+                        const sel = issues.find((i) => i.id === selectedIssueId);
+                        const dateStr = sel?.publishDate
+                          ? new Date(sel.publishDate + (sel.publishDate.length === 10 ? "T12:00:00" : ""))
+                              .toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
+                          : "";
+                        const readUrl = sel?.readCtaUrl || sel?.pdfUrl || "https://lacrimewire.online/crime-wire";
+                        const dlUrl = sel?.downloadCtaUrl || (sel?.pdfUrl ? sel.pdfUrl + "?download=1" : null);
+                        return (
+                          <div className="mt-3 border border-gray-300 bg-white p-4 text-xs space-y-2">
+                            <p className="text-gray-400">
+                              <span className="font-bold">To:</span> {recipientInfo?.eligible ?? "—"} digital subscribers
+                            </p>
+                            <p className="text-gray-400">
+                              <span className="font-bold">Subject:</span> <span className="text-black">{issueSubject || "—"}</span>
+                            </p>
+                            {issuePreview && (
+                              <p className="text-gray-400">
+                                <span className="font-bold">Preview:</span> <span className="text-black">{issuePreview}</span>
+                              </p>
+                            )}
+                            <hr className="border-gray-200" />
+                            {sel && (
+                              <div className="border-b-2 border-black pb-2 mb-2">
+                                <p className="text-[9px] text-gray-500 uppercase tracking-widest font-bold">
+                                  Vol. {sel.volume} · {sel.number}
+                                </p>
+                                <p className="font-bold text-sm uppercase">{sel.title}</p>
+                                {dateStr && <p className="text-gray-500">{dateStr}</p>}
+                              </div>
+                            )}
+                            {issuePreview && <p className="italic text-gray-600">{issuePreview}</p>}
+                            {issueMessage && <p>{issueMessage}</p>}
+                            {!issueMessage && !issuePreview && (
+                              <p className="text-gray-500">This week's Los Angeles Crime Wire is now available. Thank you for reading.</p>
+                            )}
+                            <p>
+                              <span className="bg-black text-white px-3 py-1 font-bold">
+                                Read This Week's Edition →
+                              </span>
+                              <span className="text-gray-400 ml-2 text-[10px]">{readUrl}</span>
+                            </p>
+                            {dlUrl && (
+                              <p className="font-bold underline text-gray-700">↓ Download PDF</p>
+                            )}
+                            <hr className="border-gray-200" />
+                            <p className="text-gray-400 text-[10px]">
+                              lacrimewire.online · Unsubscribe · You're receiving this because you signed up for the Thursday Drop.
+                            </p>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
 
                   <label className="flex items-start gap-3 cursor-pointer select-none">
                     <input
@@ -428,15 +593,18 @@ export default function AdminMailingList() {
                       className="mt-0.5"
                     />
                     <span className="text-xs text-gray-700">
-                      I confirm this is ready to send. The same subject line cannot be re-sent for 6 hours.
+                      I confirm this is ready to send to <strong>{recipientInfo?.eligible ?? "all digital"}</strong> subscribers.
+                      Each issue can only be dispatched once.
                     </span>
                   </label>
 
                   <Btn
                     onClick={sendIssue}
-                    disabled={issueSending || !issueSubject.trim() || !issueConfirm || !emailStatus?.configured}
+                    disabled={issueSending || !issueSubject.trim() || !issueConfirm || !emailStatus?.configured || !selectedIssueId}
                   >
-                    {issueSending ? `Sending to ${activeSubs.length} subscribers…` : `Dispatch to ${activeSubs.length} subscribers`}
+                    {issueSending
+                      ? `Sending to ${recipientInfo?.eligible ?? "…"} subscribers…`
+                      : `Dispatch to ${recipientInfo?.eligible ?? "…"} digital subscribers`}
                   </Btn>
 
                   {!emailStatus?.configured && (
@@ -506,7 +674,8 @@ export default function AdminMailingList() {
                               </div>
                               {entry.type === "campaign" && (
                                 <p className="text-[10px] text-gray-500 mt-0.5">
-                                  {entry.sent ?? 0} sent · {entry.failed ?? 0} failed · {entry.total ?? 0} total
+                                  {entry.sent ?? 0} sent · {entry.failed ?? 0} failed · {entry.total ?? 0} eligible
+                                  {(entry.skipped ?? 0) > 0 && ` · ${entry.skipped} mailed skipped`}
                                 </p>
                               )}
                               {entry.error && (

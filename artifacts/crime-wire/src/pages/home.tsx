@@ -178,7 +178,7 @@ export default function Home() {
   const readCtaLabel     = issue?.readCtaLabel ?? FALLBACK_READ_CTA;
   const readCtaUrl       = issue?.readCtaUrl || issuePdf;
   const dlCtaLabel       = issue?.downloadCtaLabel ?? FALLBACK_DL_CTA;
-  const dlCtaUrl         = issue?.downloadCtaUrl   || issuePdf;
+  const dlCtaUrl         = issue?.downloadCtaUrl || (issue?.pdfUrl ? issue.pdfUrl + "?download=1" : EDITION_URL);
   const joinCtaLabel     = issue?.joinCtaLabel ?? FALLBACK_JOIN_CTA;
   const countdownOn      = issue?.countdownEnabled !== false;
   const pubStatus        = issue?.publicStatus ?? null;

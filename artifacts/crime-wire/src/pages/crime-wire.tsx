@@ -219,28 +219,44 @@ export default function CrimeWire() {
                     <p className="font-serif italic text-gray-700 text-base mb-8">
                       {latestIssue.description || latestIssue.tagline}
                     </p>
-                    <div className="flex flex-col sm:flex-row gap-4">
-                      {latestIssue.pdfUrl ? (
-                        <a
-                          href={latestIssue.pdfUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-1 bg-black text-white border-2 border-black py-4 px-6 text-xs font-bold uppercase tracking-widest hover:bg-gray-800 transition-colors text-center"
-                        >
-                          Read the Latest Edition
-                        </a>
-                      ) : (
-                        <span className="flex-1 bg-gray-100 border-2 border-black py-4 px-6 text-xs font-bold uppercase tracking-widest text-gray-500 text-center">
-                          PDF Not Yet Available
-                        </span>
-                      )}
-                      <button
-                        onClick={() => scrollToSection("subscribe")}
-                        className="flex-1 border-2 border-black bg-white py-4 px-6 text-xs font-bold uppercase tracking-widest hover:bg-gray-100 transition-colors"
-                      >
-                        Join The Thursday Drop
-                      </button>
-                    </div>
+                    {(() => {
+                      const readUrl = latestIssue.readCtaUrl || latestIssue.pdfUrl;
+                      const dlUrl   = latestIssue.downloadCtaUrl || (latestIssue.pdfUrl ? latestIssue.pdfUrl + "?download=1" : null);
+                      return (
+                        <div className="flex flex-col sm:flex-row gap-4">
+                          {readUrl ? (
+                            <a
+                              href={readUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex-1 bg-black text-white border-2 border-black py-4 px-6 text-xs font-bold uppercase tracking-widest hover:bg-gray-800 transition-colors text-center"
+                            >
+                              Read the Latest Edition
+                            </a>
+                          ) : (
+                            <span className="flex-1 bg-gray-100 border-2 border-black py-4 px-6 text-xs font-bold uppercase tracking-widest text-gray-500 text-center">
+                              PDF Not Yet Available
+                            </span>
+                          )}
+                          {dlUrl && (
+                            <a
+                              href={dlUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex-1 border-2 border-black bg-white py-4 px-6 text-xs font-bold uppercase tracking-widest hover:bg-gray-100 transition-colors text-center"
+                            >
+                              Download PDF
+                            </a>
+                          )}
+                          <button
+                            onClick={() => scrollToSection("subscribe")}
+                            className="flex-1 border-2 border-black bg-white py-4 px-6 text-xs font-bold uppercase tracking-widest hover:bg-gray-100 transition-colors"
+                          >
+                            Join The Thursday Drop
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               ) : (
@@ -289,15 +305,28 @@ export default function CrimeWire() {
                         <p className="font-headline font-bold text-lg uppercase leading-tight">{ed.title}</p>
                         {ed.description && <p className="font-serif text-xs text-gray-600 mt-1 leading-snug">{ed.description}</p>}
                       </div>
-                      {ed.pdfUrl && (
-                        <a
-                          href={ed.pdfUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex-shrink-0 border border-black px-3 py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-black hover:text-white transition-colors whitespace-nowrap self-center"
-                        >
-                          Open PDF
-                        </a>
+                      {(ed.readCtaUrl || ed.pdfUrl) && (
+                        <div className="flex gap-2 flex-shrink-0 self-center">
+                          <a
+                            href={ed.readCtaUrl || ed.pdfUrl!}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="border border-black px-3 py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-black hover:text-white transition-colors whitespace-nowrap"
+                          >
+                            Open PDF
+                          </a>
+                          {ed.pdfUrl && (
+                            <a
+                              href={ed.pdfUrl + "?download=1"}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="border border-gray-400 px-3 py-2 text-[10px] font-bold uppercase tracking-widest hover:bg-gray-100 transition-colors whitespace-nowrap text-gray-600"
+                              title="Download PDF"
+                            >
+                              ↓ DL
+                            </a>
+                          )}
+                        </div>
                       )}
                     </div>
                   ))}

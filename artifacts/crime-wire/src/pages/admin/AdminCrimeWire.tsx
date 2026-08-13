@@ -159,12 +159,21 @@ export default function AdminCrimeWire() {
           <Field label="Publish Date">
             <input type="date" className={inputCls} value={editing.publishDate?.slice(0, 10) ?? ""} onChange={(e) => set("publishDate", e.target.value)} />
           </Field>
-          <Field label="PDF File" hint={editing.id ? "Leave blank to keep existing PDF." : "Upload the finished edition PDF."}>
+          {editing.id && !editing.pdfUrl && (
+            <div className="border-2 border-red-500 bg-red-50 p-4">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-red-700 mb-1">⚠ No PDF Attached</p>
+              <p className="text-xs text-red-600">
+                This issue has no PDF file. Readers currently see "PDF Not Yet Available." Select the PDF below and click <strong>Update Issue</strong> to attach it.
+              </p>
+            </div>
+          )}
+          <Field label="PDF File" hint={editing.id ? (editing.pdfUrl ? "Leave blank to keep existing PDF." : "Upload the PDF now to enable public reading.") : "Upload the finished edition PDF."}>
             <input ref={fileRef} type="file" accept="application/pdf" className="w-full text-sm py-1" />
           </Field>
           {editing.pdfUrl && (
             <p className="text-xs text-gray-500">
               Current PDF: <a href={editing.pdfUrl} target="_blank" rel="noopener noreferrer" className="underline">{editing.pdfUrl}</a>
+              {" · "}<a href={editing.pdfUrl + "?download=1"} target="_blank" rel="noopener noreferrer" className="underline">↓ Download</a>
             </p>
           )}
 

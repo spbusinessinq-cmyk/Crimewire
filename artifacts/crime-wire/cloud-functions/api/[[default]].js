@@ -544,7 +544,14 @@ app.get("/issues/latest", async (_req, res) => {
     const all = await getAll("cw-issues");
     const published = all
       .filter((r) => r.status === "published")
-      .sort((a, b) => new Date(b.publishDate ?? b.createdAt) - new Date(a.publishDate ?? a.createdAt));
+      .sort((a, b) => {
+        // Sort by publishDate descending; use id as tiebreaker so the newest
+        // record wins even when two issues share the same publish date.
+        const da = new Date(a.publishDate ?? a.createdAt);
+        const db = new Date(b.publishDate ?? b.createdAt);
+        const diff = db - da;
+        return diff !== 0 ? diff : (b.id ?? 0) - (a.id ?? 0);
+      });
     if (!published.length) return res.status(404).json({ error: "No published issue found" });
     return res.json(published[0]);
   } catch (e) {
@@ -1181,9 +1188,11 @@ app.get("/files/editions/:filename", async (req, res) => {
   try {
     const buf = await getFile(`editions/${req.params.filename}`);
     if (!buf) return res.status(404).json({ error: "File not found" });
+    const isDownload = req.query.download === "1" || req.query.download === "true";
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `inline; filename="${req.params.filename}"`);
-    return res.send(Buffer.from(buf));
+    res.setHeader("Content-Disposition", `${isDownload ? "attachment" : "inline"}; filename="${req.params.filename}"`);
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    return res.send(buf);
   } catch (e) {
     return res.status(500).json({ error: e.message || "Server error" });
   }
@@ -1528,6 +1537,19 @@ app.get("/unsubscribe", async (req, res) => {
 // ── Admin — Email dispatch ────────────────────────────────────
 // =============================================================
 
+/** GET /admin/email/recipients — count of digital-eligible active subscribers */
+app.get("/admin/email/recipients", requireAdmin, async (_req, res) => {
+  try {
+    const allSubs = await getAll("cw-subs");
+    const active = allSubs.filter((s) => s.status === "active");
+    const eligible = active.filter((s) => s.editionType === "digital" || s.editionType === "both");
+    const skipped  = active.filter((s) => s.editionType === "mailed").length;
+    return res.json({ eligible: eligible.length, total: active.length, skipped });
+  } catch (e) {
+    return res.status(500).json({ error: e.message || "Server error" });
+  }
+});
+
 /** GET /admin/email/status — config check + recent delivery log */
 app.get("/admin/email/status", requireAdmin, async (_req, res) => {
   const c = emailCfg();
@@ -1575,31 +1597,66 @@ app.post("/admin/email/test", requireAdmin, async (req, res) => {
   return res.json({ ok: true, timestamp: now() });
 });
 
-/** POST /admin/email/send-issue — dispatch Thursday Drop to active subscribers */
+/** POST /admin/email/send-issue — dispatch Thursday Drop to digital-eligible subscribers */
 app.post("/admin/email/send-issue", requireAdmin, async (req, res) => {
-  const { subject, preview, issueUrl, confirmSend } = req.body ?? {};
+  const { subject, preview, message, issueId, confirmSend } = req.body ?? {};
   if (!subject) return res.status(400).json({ error: "subject is required" });
   if (!confirmSend) return res.status(400).json({ error: "confirmSend must be true — this protects against accidental duplicate sends" });
   if (!emailReady()) return res.status(503).json({ error: "Email not configured — set RESEND_API_KEY and EMAIL_FROM" });
 
-  // Duplicate-send guard: same subject sent within 6 h → reject
+  // Look up the issue record if issueId provided
+  let issueRec = null;
+  if (issueId) {
+    try {
+      const allIssues = await getAll("cw-issues");
+      issueRec = allIssues.find((r) => r.id === parseInt(String(issueId), 10)) ?? null;
+    } catch { /* non-fatal */ }
+  }
+
+  // Idempotency guard: per-issue-id if issue is known; otherwise 6-hour subject guard
   try {
     const logStore = getStore("cw-email-log");
     const prevLog = (await logStore.get("log", { type: "json" })) ?? [];
-    const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
-    const recent = prevLog.find((e) => e.type === "campaign" && e.subject === subject && e.timestamp > sixHoursAgo);
-    if (recent) {
-      return res.status(409).json({
+    if (issueRec) {
+      const dup = prevLog.find((e) => e.type === "campaign" && e.issueId === issueRec.id);
+      if (dup) return res.status(409).json({
+        error: `Issue "${issueRec.title}" was already dispatched on ${dup.timestamp}. Each issue can only be sent once.`,
+        duplicate: true,
+      });
+    } else {
+      const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+      const recent = prevLog.find((e) => e.type === "campaign" && e.subject === subject && e.timestamp > sixHoursAgo);
+      if (recent) return res.status(409).json({
         error: `This subject line was already dispatched at ${recent.timestamp}. Change the subject or wait 6 hours to re-send.`,
         duplicate: true,
       });
     }
   } catch { /* non-fatal */ }
 
-  const activeSubs = (await getAll("cw-subs")).filter((s) => s.status === "active");
-  if (activeSubs.length === 0) return res.status(400).json({ error: "No active subscribers found" });
+  // Only send to subscribers who want the digital edition (digital or both)
+  const allSubs = await getAll("cw-subs");
+  const activeSubs = allSubs.filter((s) =>
+    s.status === "active" && (s.editionType === "digital" || s.editionType === "both")
+  );
+  const skippedMailedOnly = allSubs.filter((s) =>
+    s.status === "active" && s.editionType === "mailed"
+  ).length;
+  if (activeSubs.length === 0) return res.status(400).json({ error: "No digital-eligible active subscribers found" });
 
   const { siteUrl } = emailCfg();
+
+  // Build issue-aware URLs (make relative paths absolute)
+  function absUrl(url) {
+    if (!url) return null;
+    return url.startsWith("/") ? `${siteUrl}${url}` : url;
+  }
+  const readUrl  = absUrl(issueRec?.readCtaUrl || issueRec?.pdfUrl) || `${siteUrl}/crime-wire`;
+  const dlUrl    = absUrl(issueRec?.downloadCtaUrl || (issueRec?.pdfUrl ? `${issueRec.pdfUrl}?download=1` : null));
+  const issueDate = issueRec?.publishDate
+    ? new Date(issueRec.publishDate + (issueRec.publishDate.length === 10 ? "T12:00:00" : ""))
+        .toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })
+    : null;
+
   let sent = 0, failed = 0;
   const errors = [];
 
@@ -1607,19 +1664,37 @@ app.post("/admin/email/send-issue", requireAdmin, async (req, res) => {
     try {
       const tok = await unsubToken(sub.email);
       const unsubUrl = `${siteUrl}/api/unsubscribe?email=${encodeURIComponent(sub.email)}&token=${tok}`;
-      const ctaBlock = issueUrl
-        ? `<p style="text-align:center;margin:28px 0;"><a href="${issueUrl}" class="cta-btn">Read This Week's Edition →</a></p>`
-        : "";
+
+      const issueHeader = issueRec ? `
+        <div style="border-bottom:2px solid #000;padding-bottom:14px;margin-bottom:20px;">
+          <p style="font:700 10px/1 Arial,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:#888;margin:0 0 6px">
+            Vol. ${issueRec.volume ?? "I"} &middot; ${issueRec.number ?? ""}
+          </p>
+          <p style="font:700 22px/1.1 Arial,sans-serif;text-transform:uppercase;margin:0 0 4px">${issueRec.title ?? ""}</p>
+          ${issueDate ? `<p style="font:400 12px/1 Arial,sans-serif;color:#555;margin:0">${issueDate}</p>` : ""}
+        </div>` : "";
+
+      const bodyHtml = `
+        ${issueHeader}
+        <h2>${subject}</h2>
+        ${preview ? `<p style="font-size:15px;font-style:italic;color:#444;margin:0 0 16px">${preview}</p>` : ""}
+        ${message ? `<p style="font-size:15px;line-height:1.65;margin:0 0 16px">${message}</p>` : ""}
+        ${!message && !preview ? `<p>This week's Los Angeles Crime Wire is now available. Thank you for reading.</p>` : ""}
+        <p style="text-align:center;margin:28px 0;">
+          <a href="${readUrl}" class="cta-btn">Read This Week's Edition &rarr;</a>
+        </p>
+        ${dlUrl ? `<p style="text-align:center;margin:0 0 24px;">
+          <a href="${dlUrl}" style="font:700 11px/1 Arial,sans-serif;letter-spacing:.1em;text-transform:uppercase;color:#000;text-decoration:underline;">&darr; Download PDF</a>
+        </p>` : ""}
+        <hr class="rule">
+        <p style="font-size:13px;color:#555;font-style:italic;">Victim first. Facts second. Theories last.</p>`;
+
       const html = emailHtml(
-        `<h2>${subject}</h2>
-         ${preview ? `<p style="font-size:16px;font-style:italic;color:#333;">${preview}</p>` : ""}
-         ${ctaBlock}
-         <p>This week's Los Angeles Crime Wire is now available. Thank you for reading.</p>
-         <hr class="rule">
-         <p style="font-size:13px;color:#555;font-style:italic;">Victim first. Facts second. Theories last.</p>`,
+        bodyHtml,
         `Los Angeles Crime Wire &middot; <a href="${siteUrl}">${siteUrl}</a><br>
-         <a href="${unsubUrl}">Unsubscribe</a>`
+         <a href="${unsubUrl}">Unsubscribe</a> &middot; You're receiving this because you signed up for the Thursday Drop.`
       );
+
       const result = await sendEmail({ to: sub.email, subject, html });
       if (result.ok) { sent++; } else { failed++; errors.push({ email: sub.email, error: result.error }); }
       // Brief pause to respect Resend rate limits
@@ -1634,8 +1709,12 @@ app.post("/admin/email/send-issue", requireAdmin, async (req, res) => {
     type: "campaign",
     subject,
     preview: preview ?? null,
-    issueUrl: issueUrl ?? null,
+    message: message ?? null,
+    issueId: issueRec?.id ?? null,
+    issueTitle: issueRec?.title ?? null,
+    readUrl: readUrl ?? null,
     total: activeSubs.length,
+    skipped: skippedMailedOnly,
     sent,
     failed,
     errors: errors.slice(0, 10),
@@ -1643,7 +1722,7 @@ app.post("/admin/email/send-issue", requireAdmin, async (req, res) => {
     sentBy: "admin",
   });
 
-  return res.json({ ok: true, sent, failed, total: activeSubs.length, timestamp: now() });
+  return res.json({ ok: true, sent, failed, skipped: skippedMailedOnly, total: activeSubs.length, timestamp: now() });
 });
 
 /** GET /admin/email/log — full delivery log */
