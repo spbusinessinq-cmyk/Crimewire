@@ -111,14 +111,24 @@ const memUpload = multer({
 
 // ── File store helpers ─────────────────────────────────────────
 
-async function saveFile(path, buffer, mimeType) {
+async function saveFile(fileKey, buffer, mimeType) {
   const store = getStore("cw-files");
-  await store.set(path, buffer, { metadata: { mimeType } });
+  // Binary store.set() PUT to COS lacks Content-Type → COS rejects it.
+  // Instead encode as base64 JSON using setJSON (proven to work).
+  const b64 = Buffer.from(buffer).toString("base64");
+  await store.setJSON(fileKey, { b64, mimeType, size: buffer.length });
 }
 
-async function getFile(path) {
+async function getFile(fileKey) {
   const store = getStore("cw-files");
-  return store.get(path, { type: "arrayBuffer" });
+  const meta = await store.get(fileKey, { type: "json" });
+  if (!meta) return null;
+  // New format: { b64, mimeType, size }
+  if (meta && typeof meta === "object" && meta.b64) {
+    return Buffer.from(meta.b64, "base64");
+  }
+  // Legacy fallback: raw binary (pre-fix uploads)
+  return store.get(fileKey, { type: "arrayBuffer" });
 }
 
 function safeName(original) {
@@ -392,7 +402,7 @@ app.post("/subscriptions", async (req, res) => {
     return res.status(201).json({ id, createdAt: record.createdAt });
   } catch (e) {
     console.error("POST /subscriptions:", e);
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -414,7 +424,7 @@ app.get("/subscriptions", requireAdmin, async (req, res) => {
     return res.json(all);
   } catch (e) {
     console.error("GET /subscriptions:", e);
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -468,7 +478,7 @@ app.post("/tips", async (req, res) => {
     return res.status(201).json({ id, createdAt: record.createdAt });
   } catch (e) {
     console.error("POST /tips:", e);
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -476,7 +486,7 @@ app.get("/tips", requireAdmin, async (_req, res) => {
   try {
     return res.json(await getAll("cw-tips"));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -492,7 +502,7 @@ app.patch("/tips/:id", requireAdmin, async (req, res) => {
     await saveAll("cw-tips", all);
     return res.json(all[idx]);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -516,7 +526,7 @@ app.get("/issues", async (_req, res) => {
         .sort((a, b) => new Date(b.publishDate ?? b.createdAt) - new Date(a.publishDate ?? a.createdAt))
     );
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -525,7 +535,7 @@ app.get("/issues/all", requireAdmin, async (_req, res) => {
     const all = await getAll("cw-issues");
     return res.json(all.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -538,14 +548,15 @@ app.get("/issues/latest", async (_req, res) => {
     if (!published.length) return res.status(404).json({ error: "No published issue found" });
     return res.json(published[0]);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
 app.post("/issues", requireAdmin, (req, res) => {
   issueUpload(req, res, async (err) => {
-    if (err) return res.status(400).json({ error: err.message });
     try {
+      if (err) return res.status(400).json({ error: err.message || "Upload error" });
+
       const body = req.body ?? {};
       let pdfUrl = body.pdfUrl ?? null;
 
@@ -607,15 +618,16 @@ app.post("/issues", requireAdmin, (req, res) => {
       return res.status(201).json(fmtIssue(record));
     } catch (e) {
       console.error("POST /issues:", e);
-      return res.status(500).json({ error: "Storage error" });
+      return res.status(500).json({ error: e.message || "Server error" });
     }
   });
 });
 
 app.patch("/issues/:id", requireAdmin, (req, res) => {
   issueUpload(req, res, async (err) => {
-    if (err) return res.status(400).json({ error: err.message });
     try {
+      if (err) return res.status(400).json({ error: err.message || "Upload error" });
+
       const id = parseInt(req.params.id, 10);
       const all = await getAll("cw-issues");
       const idx = all.findIndex((r) => r.id === id);
@@ -664,7 +676,7 @@ app.patch("/issues/:id", requireAdmin, (req, res) => {
       return res.json(fmtIssue(rec));
     } catch (e) {
       console.error("PATCH /issues/:id:", e);
-      return res.status(500).json({ error: "Storage error" });
+      return res.status(500).json({ error: e.message || "Server error" });
     }
   });
 });
@@ -716,7 +728,7 @@ app.post("/press-club", async (req, res) => {
 
     return res.status(201).json({ id, email, tier, createdAt: record.createdAt });
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -737,7 +749,7 @@ app.get("/press-club", requireAdmin, async (req, res) => {
     }
     return res.json(all);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -753,7 +765,7 @@ app.patch("/press-club/:id", requireAdmin, async (req, res) => {
     await saveAll("cw-pressclub", all);
     return res.json({ id, status: all[idx].status, adminNote: all[idx].adminNote });
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -782,7 +794,7 @@ app.post("/letters", async (req, res) => {
     await saveAll("cw-letters", all);
     return res.status(201).json(record);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -795,7 +807,7 @@ app.get("/letters", requireAdmin, async (req, res) => {
     if (type) filtered = filtered.filter((r) => r.letterType === type);
     return res.json(filtered);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -813,7 +825,7 @@ app.patch("/letters/:id", requireAdmin, async (req, res) => {
     await saveAll("cw-letters", all);
     return res.json(all[idx]);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -828,7 +840,7 @@ app.get("/corrections", async (_req, res) => {
     const all = await getAll("cw-corrections");
     return res.json(all.filter((r) => r.publishedAt).sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt)));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -836,7 +848,7 @@ app.get("/corrections/all", requireAdmin, async (_req, res) => {
   try {
     return res.json(await getAll("cw-corrections"));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -861,7 +873,7 @@ app.post("/corrections", requireAdmin, async (req, res) => {
     await logAction("create", "correction", id, issueLabel ?? "Correction");
     return res.status(201).json(fmtCorrection(record));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -882,7 +894,7 @@ app.patch("/corrections/:id", requireAdmin, async (req, res) => {
     await logAction("update", "correction", id, all[idx].issueLabel ?? "Correction");
     return res.json(fmtCorrection(all[idx]));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -911,7 +923,7 @@ app.get("/reports", async (req, res) => {
     results.sort((a, b) => new Date(b.publishedAt ?? b.createdAt) - new Date(a.publishedAt ?? a.createdAt));
     return res.json(results.map(publicFields));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -920,7 +932,7 @@ app.get("/reports/all/list", requireAdmin, async (_req, res) => {
     const all = await getAll("cw-reports");
     return res.json(all.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -946,7 +958,7 @@ app.get("/reports/:id", async (req, res) => {
 
     return res.json(isAdmin ? rec : publicFields(rec));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -996,7 +1008,7 @@ app.post("/reports", requireAdmin, async (req, res) => {
     return res.status(201).json(record);
   } catch (e) {
     console.error("POST /reports:", e);
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1049,7 +1061,7 @@ app.patch("/reports/:id", requireAdmin, async (req, res) => {
     return res.json(rec);
   } catch (e) {
     console.error("PATCH /reports/:id:", e);
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1065,7 +1077,7 @@ app.delete("/reports/:id", requireAdmin, async (req, res) => {
     await logAction("delete", "report", id, all[idx].headline);
     return res.json({ ok: true });
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1077,9 +1089,10 @@ const fileUpload = memUpload.single("file");
 
 app.post("/uploads", requireAdmin, (req, res) => {
   fileUpload(req, res, async (err) => {
-    if (err) return res.status(400).json({ error: err.message });
-    if (!req.file) return res.status(400).json({ error: "File is required" });
     try {
+      if (err) return res.status(400).json({ error: err.message || "Upload error" });
+      if (!req.file) return res.status(400).json({ error: "File is required" });
+
       const body = req.body ?? {};
       const filename = `${Date.now()}-${safeName(req.file.originalname)}`;
       await saveFile(`uploads/${filename}`, req.file.buffer, req.file.mimetype);
@@ -1113,7 +1126,7 @@ app.post("/uploads", requireAdmin, (req, res) => {
       return res.status(201).json(record);
     } catch (e) {
       console.error("POST /uploads:", e);
-      return res.status(500).json({ error: "Storage error" });
+      return res.status(500).json({ error: e.message || "Server error" });
     }
   });
 });
@@ -1122,7 +1135,7 @@ app.get("/uploads", requireAdmin, async (_req, res) => {
   try {
     return res.json(await getAll("cw-uploads"));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1143,7 +1156,7 @@ app.patch("/uploads/:id", requireAdmin, async (req, res) => {
     await logAction("update", "upload", id, all[idx].filename);
     return res.json(all[idx]);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1158,7 +1171,7 @@ app.delete("/uploads/:id", requireAdmin, async (req, res) => {
     await saveAll("cw-uploads", all);
     return res.json({ ok: true });
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1172,7 +1185,7 @@ app.get("/files/editions/:filename", async (req, res) => {
     res.setHeader("Content-Disposition", `inline; filename="${req.params.filename}"`);
     return res.send(Buffer.from(buf));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1202,7 +1215,7 @@ app.get("/files/uploads/:filename", async (req, res) => {
     res.setHeader("Content-Disposition", `inline; filename="${req.params.filename}"`);
     return res.send(Buffer.from(buf));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1215,7 +1228,7 @@ app.get("/case-files", async (_req, res) => {
     const all = await getAll("cw-casefiles");
     return res.json(all.filter((r) => r.isPublic));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1223,7 +1236,7 @@ app.get("/case-files/all", requireAdmin, async (_req, res) => {
   try {
     return res.json(await getAll("cw-casefiles"));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1255,7 +1268,7 @@ app.get("/case-files/:id", async (req, res) => {
 
     return res.json({ ...rec, linkedReports: linked });
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1281,7 +1294,7 @@ app.post("/case-files", requireAdmin, async (req, res) => {
     await logAction("create", "case_file", id, `${identifier} — ${title}`);
     return res.status(201).json(record);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1301,7 +1314,7 @@ app.patch("/case-files/:id", requireAdmin, async (req, res) => {
     await logAction("update", "case_file", id, `${all[idx].identifier} — ${all[idx].title}`);
     return res.json(all[idx]);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1313,7 +1326,7 @@ app.get("/records-requests", requireAdmin, async (_req, res) => {
   try {
     return res.json(await getAll("cw-recsreqs"));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1341,7 +1354,7 @@ app.post("/records-requests", requireAdmin, async (req, res) => {
     await logAction("create", "records_request", id, record.agency ?? "Request");
     return res.status(201).json(record);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1361,7 +1374,7 @@ app.patch("/records-requests/:id", requireAdmin, async (req, res) => {
     await saveAll("cw-recsreqs", all);
     return res.json(all[idx]);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1373,7 +1386,7 @@ app.get("/advertisers", requireAdmin, async (_req, res) => {
   try {
     return res.json(await getAll("cw-advertisers"));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1401,7 +1414,7 @@ app.post("/advertisers", requireAdmin, async (req, res) => {
     await logAction("create", "advertiser", id, name);
     return res.status(201).json(record);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1421,7 +1434,7 @@ app.patch("/advertisers/:id", requireAdmin, async (req, res) => {
     await logAction("update", "advertiser", id, all[idx].name);
     return res.json(all[idx]);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1436,7 +1449,7 @@ app.get("/admin-log", requireAdmin, async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit ?? "100", 10), 500);
     return res.json(log.slice(0, limit));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1459,7 +1472,7 @@ app.get("/settings", requireAdmin, async (_req, res) => {
     const settings = (await store.get("all", { type: "json" })) ?? {};
     return res.json(settings);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1479,7 +1492,7 @@ app.put("/settings", requireAdmin, async (req, res) => {
     await store.setJSON("all", settings);
     return res.json({ key, value: settings[key] ?? null });
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1641,7 +1654,7 @@ app.get("/admin/email/log", requireAdmin, async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit ?? "50", 10), 200);
     return res.json(log.slice(0, limit));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1727,7 +1740,7 @@ app.get("/comics", async (_req, res) => {
       });
     return res.json(published);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1741,15 +1754,16 @@ app.get("/admin/comics", requireAdmin, async (_req, res) => {
     });
     return res.json(all);
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
 // Admin: create comic
 app.post("/admin/comics", requireAdmin, (req, res) => {
   comicUpload(req, res, async (err) => {
-    if (err) return res.status(400).json({ error: err.message });
     try {
+      if (err) return res.status(400).json({ error: err.message || "Upload error" });
+
       const body = req.body ?? {};
       let artworkUrl = body.artworkUrl || null;
 
@@ -1781,7 +1795,7 @@ app.post("/admin/comics", requireAdmin, (req, res) => {
       return res.status(201).json(record);
     } catch (e) {
       console.error("POST /admin/comics:", e);
-      return res.status(500).json({ error: "Storage error" });
+      return res.status(500).json({ error: e.message || "Server error" });
     }
   });
 });
@@ -1789,8 +1803,9 @@ app.post("/admin/comics", requireAdmin, (req, res) => {
 // Admin: update comic
 app.patch("/admin/comics/:id", requireAdmin, (req, res) => {
   comicUpload(req, res, async (err) => {
-    if (err) return res.status(400).json({ error: err.message });
     try {
+      if (err) return res.status(400).json({ error: err.message || "Upload error" });
+
       const id = parseInt(req.params.id, 10);
       const all = await getAll("cw-comics");
       const idx = all.findIndex((c) => c.id === id);
@@ -1820,7 +1835,7 @@ app.patch("/admin/comics/:id", requireAdmin, (req, res) => {
       return res.json(all[idx]);
     } catch (e) {
       console.error("PATCH /admin/comics/:id:", e);
-      return res.status(500).json({ error: "Storage error" });
+      return res.status(500).json({ error: e.message || "Server error" });
     }
   });
 });
@@ -1837,7 +1852,7 @@ app.delete("/admin/comics/:id", requireAdmin, async (req, res) => {
     await saveAll("cw-comics", all);
     return res.json({ ok: true });
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
 });
 
@@ -1855,8 +1870,35 @@ app.get("/files/comics/:filename", async (req, res) => {
     res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
     return res.send(Buffer.from(buf));
   } catch (e) {
-    return res.status(500).json({ error: "Storage error" });
+    return res.status(500).json({ error: e.message || "Server error" });
   }
+});
+
+// =============================================================
+// ── Blob storage diagnostic (admin only) ──────────────────────
+// =============================================================
+
+app.get("/admin/blob-test", requireAdmin, async (_req, res) => {
+  const results = {};
+  // Test write+read round-trip on cw-files
+  try {
+    const store = getStore("cw-files");
+    const testKey = "__health__";
+    const testPayload = { ok: true, ts: Date.now() };
+    await store.setJSON(testKey, testPayload);
+    const readBack = await store.get(testKey, { type: "json" });
+    results.cwFiles = { ok: true, roundTrip: readBack?.ok === true };
+  } catch (e) {
+    results.cwFiles = { ok: false, error: e.message };
+  }
+  // Test cw-issues read
+  try {
+    const issues = await getAll("cw-issues");
+    results.issueCount = issues.length;
+  } catch (e) {
+    results.issueCount = { error: e.message };
+  }
+  return res.json(results);
 });
 
 // =============================================================
